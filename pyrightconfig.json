@@ -1,0 +1,8 @@
+{
+  "venvPath": "e:/PROJECTS/AlphaLens/backend",
+  "venv": "venv",
+  "extraPaths": [
+    "e:/PROJECTS/AlphaLens/backend",
+    "e:/PROJECTS/AlphaLens/backend/venv/Lib/site-packages"
+  ]
+}

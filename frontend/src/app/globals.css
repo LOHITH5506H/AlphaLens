@@ -1,0 +1,462 @@
+@import "tailwindcss";
+
+/* =========================================================================
+   AlphaLens — Design System
+   Premium dark glassmorphism theme for AR financial dashboard
+   ========================================================================= */
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Core palette */
+  --color-navy-900: #0a0e1a;
+  --color-navy-800: #0f1629;
+  --color-navy-700: #161d35;
+  --color-navy-600: #1e2847;
+
+  /* Accent colors */
+  --color-electric-blue: #3b82f6;
+  --color-electric-blue-light: #60a5fa;
+  --color-cyan-glow: #22d3ee;
+
+  /* Signal colors */
+  --color-signal-buy: #10b981;
+  --color-signal-buy-light: #34d399;
+  --color-signal-hold: #f59e0b;
+  --color-signal-hold-light: #fbbf24;
+  --color-signal-sell: #ef4444;
+  --color-signal-sell-light: #f87171;
+
+  /* Glass */
+  --color-glass-bg: rgba(15, 22, 41, 0.75);
+  --color-glass-border: rgba(59, 130, 246, 0.2);
+  --color-glass-highlight: rgba(255, 255, 255, 0.05);
+}
+
+:root {
+  --background: #0a0e1a;
+  --foreground: #e2e8f0;
+}
+
+/* =========================================================================
+   Base styles
+   ========================================================================= */
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans, "Inter", system-ui, -apple-system, sans-serif);
+  overflow: hidden;
+}
+
+/* =========================================================================
+   Glassmorphism cards
+   ========================================================================= */
+
+.glass-card {
+  background: rgba(15, 22, 41, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 16px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.glass-card-sm {
+  background: rgba(15, 22, 41, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* =========================================================================
+   Signal / Recommendation badges
+   ========================================================================= */
+
+.badge-buy {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(52, 211, 153, 0.1));
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+.badge-hold {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(251, 191, 36, 0.1));
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+.badge-sell {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(248, 113, 113, 0.1));
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+/* =========================================================================
+   Animations
+   ========================================================================= */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(59, 130, 246, 0.7);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes micPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
+  }
+}
+
+@keyframes priceFlash {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out both;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(59, 130, 246, 0.05) 25%,
+    rgba(59, 130, 246, 0.15) 50%,
+    rgba(59, 130, 246, 0.05) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+.animate-mic-pulse {
+  animation: micPulse 1.5s ease-in-out infinite;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.4s ease-out both;
+}
+
+/* =========================================================================
+   AR-specific styles
+   ========================================================================= */
+
+/* Container for the MindAR canvas */
+.ar-container {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.ar-container video {
+  object-fit: cover;
+}
+
+/* Fixed overlay layer above the AR canvas */
+.ar-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.ar-overlay > * {
+  pointer-events: auto;
+}
+
+/* =========================================================================
+   Dashboard panel (used inside CSS3DObject)
+   ========================================================================= */
+
+.ar-dashboard {
+  width: 380px;
+  padding: 20px;
+  background: rgba(10, 14, 26, 0.88);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 20px;
+  box-shadow:
+    0 12px 48px rgba(0, 0, 0, 0.6),
+    0 0 1px rgba(59, 130, 246, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+.ar-dashboard-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.15);
+  margin-bottom: 14px;
+}
+
+.ar-dashboard-header .logo {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.ar-dashboard-header .company-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: -0.02em;
+}
+
+.ar-dashboard-header .ticker-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.12);
+  padding: 2px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.05em;
+}
+
+/* Live price row */
+.price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.price-row .price {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #f8fafc;
+}
+
+.price-row .change {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.price-row .change.up {
+  color: #34d399;
+}
+
+.price-row .change.down {
+  color: #f87171;
+}
+
+/* Stats grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  background: rgba(22, 29, 53, 0.6);
+  border: 1px solid rgba(59, 130, 246, 0.1);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.stat-card .label {
+  font-size: 10px;
+  font-weight: 500;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+
+.stat-card .value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+/* Chart container */
+.chart-container {
+  background: rgba(22, 29, 53, 0.4);
+  border: 1px solid rgba(59, 130, 246, 0.1);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.chart-container .chart-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+/* AI Recommendation banner */
+.ai-banner {
+  border-radius: 14px;
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.ai-banner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.06;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 10px,
+    currentColor 10px,
+    currentColor 11px
+  );
+}
+
+.ai-banner .ai-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.7;
+  margin-bottom: 6px;
+}
+
+.ai-banner .ai-recommendation {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.ai-banner .ai-score {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.8;
+  margin-bottom: 8px;
+}
+
+.ai-banner .ai-explanation {
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
+/* =========================================================================
+   Loading skeleton
+   ========================================================================= */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(30, 40, 71, 0.6) 25%,
+    rgba(30, 40, 71, 0.9) 50%,
+    rgba(30, 40, 71, 0.6) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* =========================================================================
+   Voice button
+   ========================================================================= */
+
+.voice-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1e2847, #0f1629);
+  border: 2px solid rgba(59, 130, 246, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #94a3b8;
+}
+
+.voice-btn:hover {
+  border-color: rgba(59, 130, 246, 0.6);
+  color: #60a5fa;
+  transform: scale(1.05);
+}
+
+.voice-btn:active,
+.voice-btn.listening {
+  background: linear-gradient(135deg, #7f1d1d, #991b1b);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #fca5a5;
+}
+
+.voice-btn.listening {
+  animation: micPulse 1.5s ease-in-out infinite;
+}
+
+/* =========================================================================
+   Scrollbar
+   ========================================================================= */
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(59, 130, 246, 0.3);
+  border-radius: 4px;
+}

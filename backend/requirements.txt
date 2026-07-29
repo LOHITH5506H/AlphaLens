@@ -1,0 +1,6 @@
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+yfinance==0.2.*
+google-genai==1.*
+pydantic==2.*
+python-dotenv==1.*
