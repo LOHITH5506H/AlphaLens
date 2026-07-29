@@ -117,7 +117,7 @@ Provide your investment analysis."""
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.5-flash",
             contents=user_prompt,
             config={
                 "system_instruction": ANALYST_SYSTEM_PROMPT,
@@ -172,7 +172,7 @@ Parse their intent and respond."""
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.5-flash",
             contents=user_prompt,
             config={
                 "system_instruction": VOICE_SYSTEM_PROMPT,
@@ -195,3 +195,58 @@ Parse their intent and respond."""
             "message": "Sorry, I couldn't understand that. Try saying something like 'Show me the PE ratio'.",
             "data": None,
         }
+
+
+async def recognize_logo(base64_image: str) -> str:
+    """
+    Uses Gemini Vision to identify a company logo from a base64 image string.
+    Returns the stock ticker symbol, or 'NONE' if no logo is detected.
+    """
+    import base64
+    from google.genai import types
+
+    # Clean up base64 string if it contains the data URI prefix
+    if "," in base64_image:
+        base64_image = base64_image.split(",")[1]
+
+    try:
+        image_bytes = base64.b64decode(base64_image)
+    except Exception as e:
+        logger.error("Failed to decode base64 image: %s", e)
+        return "NONE"
+
+    client = _get_client()
+    
+    prompt = """Analyze this image carefully. If you see a prominent company logo (like Apple, Tesla, Microsoft, Nike, etc), return ONLY the official stock ticker symbol for that company (e.g., AAPL, TSLA, MSFT). 
+If it is an Indian company like Reliance, return RELIANCE.NS. 
+If you see multiple logos, return the most prominent one.
+If no clear company logo is found, return exactly the word NONE. Do not provide any other explanation or text."""
+
+    logger.info("Sending image to Gemini Vision for logo recognition...")
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-3.5-flash",
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+                prompt
+            ],
+            config={
+                "temperature": 0.0, # Zero temp for deterministic factual output
+            }
+        )
+
+        if not response.text:
+            return "NONE"
+            
+        ticker = response.text.strip().upper()
+        # Clean up any extra formatting Gemini might accidentally include
+        ticker = ticker.replace('"', '').replace("'", "").replace("`", "")
+        
+        logger.info("Vision API detected logo: %s", ticker)
+        return ticker
+        
+    except Exception as e:
+        logger.error("Vision API error during logo recognition: %s", e)
+        return "NONE"
+

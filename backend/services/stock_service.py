@@ -118,3 +118,35 @@ def get_stock_data(ticker: str) -> StockData:
         raise ValueError(
             f"Error fetching data for '{ticker}': {str(e)}"
         ) from e
+
+
+def search_company_ticker(query: str) -> str:
+    """
+    Search for a company name and return the best matching ticker symbol.
+    """
+    import requests
+    try:
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url, headers=headers)
+        res.raise_for_status()
+        data = res.json()
+        
+        quotes = data.get("quotes", [])
+        if not quotes:
+            raise ValueError(f"No company found for '{query}'.")
+            
+        # Try to find the first equity/stock (not an option or mutual fund)
+        for q in quotes:
+            if "symbol" in q and q.get("quoteType") == "EQUITY":
+                return q["symbol"]
+                
+        # Fallback to the first symbol if no explicit equity found
+        if "symbol" in quotes[0]:
+            return quotes[0]["symbol"]
+            
+        raise ValueError(f"No valid ticker symbol found for '{query}'.")
+    except Exception as e:
+        logger.error("Failed to search company %s: %s", query, e)
+        raise ValueError(f"Failed to search for company: {query}") from e
+

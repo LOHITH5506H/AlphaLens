@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 from models.schemas import StockData, AIAnalysis, VoiceCommandRequest, VoiceCommandResponse
 from services.stock_service import get_stock_data
@@ -98,6 +99,25 @@ async def get_stock(ticker: str):
         )
 
 
+@app.get("/api/search/{query}")
+async def search_company(query: str):
+    """
+    Search for a company by name and return its ticker symbol.
+    """
+    from services.stock_service import search_company_ticker
+    try:
+        ticker = search_company_ticker(query)
+        return {"ticker": ticker}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error("Search error: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Error searching for company.",
+        )
+
+
 @app.get("/api/analyze/{ticker}", response_model=AIAnalysis)
 async def analyze(ticker: str):
     """
@@ -124,6 +144,28 @@ async def analyze(ticker: str):
             detail="AI analysis service is temporarily unavailable.",
         )
 
+
+class LogoRequest(BaseModel):
+    image: str
+
+@app.post("/api/recognize_logo")
+async def recognize_logo_endpoint(request: LogoRequest):
+    """
+    Accepts a base64 encoded image and returns the recognized ticker.
+    """
+    from services.ai_service import recognize_logo
+    if not request.image:
+        raise HTTPException(status_code=400, detail="Image data is required")
+        
+    try:
+        ticker = await recognize_logo(request.image)
+        return {"ticker": ticker}
+    except Exception as e:
+        logger.error("Logo recognition endpoint error: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Error processing image for logo recognition.",
+        )
 
 @app.post("/api/voice", response_model=VoiceCommandResponse)
 async def handle_voice_command(request: VoiceCommandRequest):

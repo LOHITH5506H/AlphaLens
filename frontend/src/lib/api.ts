@@ -18,6 +18,36 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
 }
 
 /**
+ * Search for a company name and get its ticker symbol.
+ */
+export async function searchTicker(query: string): Promise<string> {
+  const res = await fetch(`${API_BASE_URL}/api/search/${encodeURIComponent(query)}`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Unknown error" }));
+    throw new Error(error.detail || `Failed to search company (${res.status})`);
+  }
+  const data = await res.json();
+  return data.ticker;
+}
+
+/**
+ * Send an image to Gemini Vision to recognize a company logo.
+ */
+export async function recognizeLogo(base64Image: string): Promise<string> {
+  const res = await fetch(`${API_BASE_URL}/api/recognize_logo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: base64Image }),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Unknown error" }));
+    throw new Error(error.detail || `Failed to recognize logo (${res.status})`);
+  }
+  const data = await res.json();
+  return data.ticker;
+}
+
+/**
  * Fetch AI analysis for a given ticker.
  */
 export async function fetchAIAnalysis(ticker: string): Promise<AIAnalysis> {
