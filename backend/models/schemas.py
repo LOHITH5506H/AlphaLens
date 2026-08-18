@@ -31,18 +31,13 @@ class StockData(BaseModel):
 
 
 class AIAnalysis(BaseModel):
-    """AI-generated investment analysis returned by /api/analyze/{ticker}."""
-    sentiment_score: int = Field(
-        description="Confidence score from 0 (very bearish) to 100 (very bullish)",
-        ge=0,
-        le=100,
-    )
-    recommendation: Literal["Buy", "Hold", "Sell"] = Field(
-        description="Investment recommendation"
-    )
-    explanation: str = Field(
-        description="Concise 2-3 sentence explanation of the recommendation"
-    )
+    """AI-generated investment analysis returned by /api/analyze-sentiment."""
+    positive: float = Field(description="Positive sentiment score (0-100)")
+    neutral: float = Field(description="Neutral sentiment score (0-100)")
+    negative: float = Field(description="Negative sentiment score (0-100)")
+
+class SentimentRequest(BaseModel):
+    text: str = Field(description="Text to analyze")
 
 
 class VoiceCommandRequest(BaseModel):

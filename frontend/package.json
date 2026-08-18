@@ -6,15 +6,19 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "node -e \"const fs = require('fs'); const file = 'node_modules/mind-ar/dist/mindar-image-three.prod.js'; if(fs.existsSync(file)) { let content = fs.readFileSync(file, 'utf8'); content = content.replace(/sRGBEncoding/g, 'SRGBColorSpace'); fs.writeFileSync(file, content); }\""
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.8",
+    "@react-three/fiber": "^9.7.0",
+    "@react-three/postprocessing": "^3.0.5",
     "lightweight-charts": "^5.2.1",
     "mind-ar": "^1.2.5",
     "next": "16.2.12",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "three": "^0.160.0"
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

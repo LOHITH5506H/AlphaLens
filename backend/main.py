@@ -16,9 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from models.schemas import StockData, AIAnalysis, VoiceCommandRequest, VoiceCommandResponse
+from models.schemas import StockData, AIAnalysis, VoiceCommandRequest, VoiceCommandResponse, SentimentRequest
 from services.stock_service import get_stock_data
-from services.ai_service import analyze_stock, process_voice_command
+from services.ai_service import process_voice_command
+from services.sentiment_service import analyze_sentiment
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -118,30 +119,24 @@ async def search_company(query: str):
         )
 
 
-@app.get("/api/analyze/{ticker}", response_model=AIAnalysis)
-async def analyze(ticker: str):
+@app.post("/api/analyze-sentiment", response_model=AIAnalysis)
+async def analyze_sentiment_endpoint(request: SentimentRequest):
     """
-    Get AI-powered investment analysis for a given ticker.
-
-    Fetches the latest stock data, sends it to Google Gemini for analysis,
-    and returns a Buy/Hold/Sell recommendation with a confidence score
-    and explanation.
+    Get AI-powered deterministic financial sentiment analysis for the provided text.
+    Returns fast, deterministic scores for positive, negative, and neutral sentiment.
     """
-    # Step 1: Fetch stock data
     try:
-        stock_data = get_stock_data(ticker)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-    # Step 2: Send to AI for analysis
-    try:
-        analysis = await analyze_stock(stock_data)
-        return analysis
+        analysis_scores = analyze_sentiment(request.text)
+        return AIAnalysis(
+            positive=analysis_scores["positive"],
+            neutral=analysis_scores["neutral"],
+            negative=analysis_scores["negative"]
+        )
     except Exception as e:
-        logger.error("AI analysis failed for %s: %s", ticker, e)
+        logger.error("Sentiment analysis failed: %s", e)
         raise HTTPException(
             status_code=500,
-            detail="AI analysis service is temporarily unavailable.",
+            detail="Sentiment analysis service is temporarily unavailable.",
         )
 
 

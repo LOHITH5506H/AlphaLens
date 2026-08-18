@@ -23,9 +23,9 @@ export interface StockData {
 }
 
 export interface AIAnalysis {
-  sentiment_score: number;
-  recommendation: "Buy" | "Hold" | "Sell";
-  explanation: string;
+  positive: number;
+  neutral: number;
+  negative: number;
 }
 
 export interface VoiceCommandResponse {

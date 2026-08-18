@@ -89,8 +89,12 @@ export default function HomePage() {
       setVoiceMessage(null);
       setIsManual(manualTrigger);
 
-      stockData.fetch(ticker);
-      aiAnalysis.fetch(ticker);
+      stockData.fetch(ticker).then((data) => {
+        if (data) {
+          const text = `${data.name} (${data.ticker}) is currently trading at $${data.current_price}. It has a market cap of $${data.market_cap} and a PE ratio of ${data.pe_ratio}.`;
+          aiAnalysis.fetch(text);
+        }
+      });
     },
     [stockData, aiAnalysis]
   );
@@ -138,7 +142,11 @@ export default function HomePage() {
           setHighlightedStats(stats.length > 0 ? stats : undefined);
         }
         if (response.intent === "ai_analysis" && activeTickerRef.current) {
-          aiAnalysis.fetch(activeTickerRef.current);
+          if (stockData.data) {
+            const data = stockData.data;
+            const text = `${data.name} (${data.ticker}) is currently trading at $${data.current_price}. It has a market cap of $${data.market_cap} and a PE ratio of ${data.pe_ratio}.`;
+            aiAnalysis.fetch(text);
+          }
         }
       })
       .catch(() => {

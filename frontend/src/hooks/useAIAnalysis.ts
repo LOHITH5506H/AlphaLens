@@ -12,7 +12,7 @@ interface UseAIAnalysisReturn {
   analysis: AIAnalysis | null;
   loading: boolean;
   error: string | null;
-  fetch: (ticker: string) => Promise<AIAnalysis | null>;
+  fetch: (text: string) => Promise<AIAnalysis | null>;
   reset: () => void;
 }
 
@@ -21,11 +21,11 @@ export function useAIAnalysis(): UseAIAnalysisReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async (ticker: string): Promise<AIAnalysis | null> => {
+  const fetchData = useCallback(async (text: string): Promise<AIAnalysis | null> => {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchAIAnalysis(ticker);
+      const result = await fetchAIAnalysis(text);
       setAnalysis(result);
       return result;
     } catch (err) {

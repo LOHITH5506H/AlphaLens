@@ -48,10 +48,14 @@ export async function recognizeLogo(base64Image: string): Promise<string> {
 }
 
 /**
- * Fetch AI analysis for a given ticker.
+ * Fetch AI sentiment analysis for a given text summary.
  */
-export async function fetchAIAnalysis(ticker: string): Promise<AIAnalysis> {
-  const res = await fetch(`${API_BASE_URL}/api/analyze/${encodeURIComponent(ticker)}`);
+export async function fetchAIAnalysis(text: string): Promise<AIAnalysis> {
+  const res = await fetch(`${API_BASE_URL}/api/analyze-sentiment`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Unknown error" }));
     throw new Error(error.detail || `Failed to fetch AI analysis (${res.status})`);
