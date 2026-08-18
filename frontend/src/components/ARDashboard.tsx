@@ -10,6 +10,7 @@
 
 import type { StockData, AIAnalysis } from "@/types";
 import { formatPrice } from "@/lib/constants";
+import { DUMMY_STOCK_DATA } from "@/lib/dummyData";
 import StockStats from "./StockStats";
 import PriceChart from "./PriceChart";
 import AIBanner from "./AIBanner";
@@ -58,6 +59,9 @@ export default function ARDashboard({
 
   if (!stockData) return null;
 
+  // Detect demo mode (no live data, will use dummy fallback)
+  const isDemoMode = !stockData.current_price && stockData.price_history.length === 0;
+
   // Calculate price change
   const priceChange =
     stockData.price_history.length >= 2
@@ -70,6 +74,36 @@ export default function ARDashboard({
 
   return (
     <div className="ar-dashboard animate-fade-in-up">
+      {/* Demo mode indicator */}
+      {isDemoMode && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            padding: "6px 14px",
+            marginBottom: "12px",
+            borderRadius: "8px",
+            background: "rgba(245, 158, 11, 0.08)",
+            border: "1px solid rgba(245, 158, 11, 0.2)",
+          }}
+        >
+          <span style={{ fontSize: "10px" }}>⚡</span>
+          <span
+            style={{
+              fontSize: "9px",
+              fontWeight: 700,
+              letterSpacing: "0.12em",
+              color: "#f59e0b",
+              textTransform: "uppercase" as const,
+            }}
+          >
+            Demo Mode — Dummy Data
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="ar-dashboard-header">
         <div className="logo">

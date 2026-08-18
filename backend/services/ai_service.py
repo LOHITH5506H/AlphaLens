@@ -8,6 +8,8 @@ matching our Pydantic models.
 import os
 import json
 import logging
+import asyncio
+import typing
 
 from google import genai
 from dotenv import load_dotenv
@@ -22,6 +24,57 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _client: genai.Client | None = None
+
+FALLBACK_MODELS = [
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+]
+
+async def generate_with_fallback(client: genai.Client, contents, config: typing.Any, max_retries_per_model: int = 2):
+    """
+    Attempts to generate content using a list of fallback models.
+    If a rate limit (429) or quota error is encountered, it immediately falls back to the next model.
+    Other errors are retried up to `max_retries_per_model` times before falling back.
+    """
+    last_exception = None
+    for model in FALLBACK_MODELS:
+        for attempt in range(max_retries_per_model):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=config,
+                )
+                text = response.text
+                if text is None:
+                    raise ValueError(f"No text returned from {model} API")
+                return response
+            except Exception as e:
+                last_exception = e
+                error_str = str(e).lower()
+                is_rate_limit = (
+                    (hasattr(e, 'code') and e.code == 429) or
+                    '429' in error_str or
+                    'quota' in error_str or
+                    'exhausted' in error_str or
+                    'rate limit' in error_str
+                )
+
+                if is_rate_limit:
+                    logger.warning("Rate limit/Quota hit for model %s: %s. Falling back to next model.", model, e)
+                    break  # Break retry loop, proceed to next model
+                
+                if attempt < max_retries_per_model - 1:
+                    logger.warning("API error for %s (attempt %d/%d): %s. Retrying in 2s...", model, attempt + 1, max_retries_per_model, e)
+                    await asyncio.sleep(2)
+                else:
+                    logger.warning("Max retries reached for model %s. Falling back to next model.", model)
+    
+    logger.error("All fallback models failed. Last exception: %s", last_exception)
+    raise last_exception if last_exception else RuntimeError("All fallback models failed.")
 
 
 def _get_client() -> genai.Client:
@@ -116,22 +169,22 @@ Provide your investment analysis."""
     logger.info("Sending analysis request to Gemini for %s", stock_data.ticker)
 
     try:
-        response = client.models.generate_content(
-            model="gemini-3.5-flash",
+        response = await generate_with_fallback(
+            client=client,
             contents=user_prompt,
             config={
                 "system_instruction": ANALYST_SYSTEM_PROMPT,
                 "response_mime_type": "application/json",
                 "response_schema": AIAnalysis,
                 "temperature": 0.3,
-            },
+            }
         )
-
-        if response.text is None:
+        text = response.text
+        if not text:
             raise ValueError("No text returned from Gemini API")
-            
+
         # The response is guaranteed to be valid JSON matching AIAnalysis
-        result = AIAnalysis.model_validate_json(response.text)
+        result = AIAnalysis.model_validate_json(text)
         logger.info(
             "Gemini analysis for %s: %s (score: %d)",
             stock_data.ticker,
@@ -141,14 +194,12 @@ Provide your investment analysis."""
         return result
 
     except Exception as e:
-        logger.error("Gemini API error for %s: %s", stock_data.ticker, e)
+        logger.error("Gemini API error for %s after all fallbacks: %s", stock_data.ticker, e)
         # Return a safe fallback rather than crashing the endpoint
         return AIAnalysis(
             sentiment_score=50,
             recommendation="Hold",
-            explanation=f"AI analysis is temporarily unavailable ({type(e).__name__}). "
-            "Please try again shortly. Based on available data, a Hold stance is recommended "
-            "until a full analysis can be performed.",
+            explanation="AI analysis temporarily unavailable due to server demand. Displaying raw financial data."
         )
 
 
@@ -171,20 +222,20 @@ They said: "{transcript}"
 Parse their intent and respond."""
 
     try:
-        response = client.models.generate_content(
-            model="gemini-3.5-flash",
+        response = await generate_with_fallback(
+            client=client,
             contents=user_prompt,
             config={
                 "system_instruction": VOICE_SYSTEM_PROMPT,
                 "response_mime_type": "application/json",
                 "temperature": 0.2,
-            },
+            }
         )
-
-        if response.text is None:
+        text = response.text
+        if not text:
             raise ValueError("No text returned from Gemini API")
             
-        result = json.loads(response.text)
+        result = json.loads(text)
         logger.info("Voice command parsed: '%s' → intent=%s", transcript, result.get("intent"))
         return result
 
@@ -225,8 +276,8 @@ If no clear company logo is found, return exactly the word NONE. Do not provide 
     logger.info("Sending image to Gemini Vision for logo recognition...")
 
     try:
-        response = client.models.generate_content(
-            model="gemini-3.5-flash",
+        response = await generate_with_fallback(
+            client=client,
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
                 prompt

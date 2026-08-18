@@ -40,6 +40,36 @@ def _set_cached(ticker: str, data: StockData) -> None:
 
 
 # ---------------------------------------------------------------------------
+# NaN / Inf sanitization helpers
+# ---------------------------------------------------------------------------
+
+import math
+
+
+def _sanitize_float(value: Any, round_digits: int | None = None) -> float | None:
+    """Return None if value is None, NaN, or Inf; otherwise optionally round."""
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(f) or math.isinf(f):
+        return None
+    if round_digits is not None:
+        return round(f, round_digits)
+    return f
+
+
+def _sanitize_int(value: Any) -> int | None:
+    """Return None if value is None, NaN, or Inf; otherwise cast to int."""
+    cleaned = _sanitize_float(value)
+    if cleaned is None:
+        return None
+    return int(cleaned)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -87,23 +117,28 @@ def get_stock_data(ticker: str) -> StockData:
         price_history: list[PricePoint] = []
         if not hist.empty:
             for date_idx, row in hist.iterrows():
+                close_val = row["Close"]
+                # yfinance can return NaN for days with missing data;
+                # NaN is not JSON-serializable, so skip those entries.
+                if close_val is None or (isinstance(close_val, float) and close_val != close_val):
+                    continue
                 price_history.append(
                     PricePoint(
                         date=date_idx.strftime("%Y-%m-%d"),
-                        close=round(row["Close"], 2),
+                        close=round(close_val, 2),
                     )
                 )
 
         stock_data = StockData(
             ticker=ticker,
             name=name,
-            current_price=round(current_price, 2) if current_price else None,
-            market_cap=info.get("marketCap"),
-            pe_ratio=round(info["trailingPE"], 2) if info.get("trailingPE") else None,
-            eps=round(info["trailingEps"], 2) if info.get("trailingEps") else None,
-            fifty_two_week_high=info.get("fiftyTwoWeekHigh"),
-            fifty_two_week_low=info.get("fiftyTwoWeekLow"),
-            volume=info.get("volume") or info.get("regularMarketVolume"),
+            current_price=_sanitize_float(current_price, round_digits=2),
+            market_cap=_sanitize_int(info.get("marketCap")),
+            pe_ratio=_sanitize_float(info.get("trailingPE"), round_digits=2),
+            eps=_sanitize_float(info.get("trailingEps"), round_digits=2),
+            fifty_two_week_high=_sanitize_float(info.get("fiftyTwoWeekHigh")),
+            fifty_two_week_low=_sanitize_float(info.get("fiftyTwoWeekLow")),
+            volume=_sanitize_int(info.get("volume") or info.get("regularMarketVolume")),
             sector=info.get("sector"),
             price_history=price_history,
         )

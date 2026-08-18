@@ -12,15 +12,15 @@
 
 import dynamic from "next/dynamic";
 import { useState, useCallback, useRef, useEffect } from "react";
-import ARDashboard from "@/components/ARDashboard";
+
 import VoiceButton from "@/components/VoiceButton";
 import { useStockData } from "@/hooks/useStockData";
 import { useAIAnalysis } from "@/hooks/useAIAnalysis";
 import { useSpeech } from "@/hooks/useSpeech";
 import { sendVoiceCommand, searchTicker } from "@/lib/api";
 
-// Dynamically import AIScanner with SSR disabled (needs browser APIs)
-const AIScanner = dynamic(() => import("@/components/AIScanner"), {
+// Dynamically import ARScene with SSR disabled (needs browser APIs)
+const ARScene = dynamic(() => import("@/components/ARScene"), {
   ssr: false,
   loading: () => (
     <div
@@ -37,7 +37,7 @@ const AIScanner = dynamic(() => import("@/components/AIScanner"), {
       <div style={{ textAlign: "center" }}>
         <div style={{ fontSize: "48px", marginBottom: "16px" }}>📷</div>
         <div style={{ fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>
-          AlphaLens Scanner
+          AlphaLens AR Engine
         </div>
         <div style={{ fontSize: "13px", color: "#94a3b8", marginTop: "6px" }}>
           Initializing camera...
@@ -148,12 +148,19 @@ export default function HomePage() {
 
   return (
     <main style={{ width: "100vw", height: "100vh", position: "relative", overflow: "hidden", background: "#0a0e1a" }}>
-      {/* AI Vision Camera Scanner */}
-      {!showDashboard && (
-        <AIScanner
-          onTargetFound={(index, ticker) => handleTargetFound(index, ticker, false)}
-        />
-      )}
+      {/* AR Engine (Continuous Tracking + 3D Visualizations) */}
+      <ARScene
+        stockData={stockData.data}
+        aiAnalysis={aiAnalysis.analysis}
+        aiError={aiAnalysis.error}
+        isManualMode={isManual}
+        onTargetFound={(index, ticker, isFallback) => handleTargetFound(index, ticker, isFallback)}
+        onTargetLost={(index) => {
+          // If we lose tracking, we can optionally hide the 2D dashboard
+          // but we leave it for now in case the user wants to read it.
+          // The 3D elements will automatically vanish when marker is lost anyway.
+        }}
+      />
 
       {/* Manual Search UI */}
       {!showDashboard && (
@@ -180,37 +187,16 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Dashboard overlay */}
-      {showDashboard && (
-        <div
-          className="ar-overlay"
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "16px",
-            zIndex: 90,
-            pointerEvents: "none"
-          }}
-        >
-          <div style={{ maxHeight: "90vh", overflowY: "auto", pointerEvents: "auto", width: "100%", maxWidth: "400px", borderRadius: "24px", position: "relative" }}>
-            <button 
-              onClick={() => { setShowDashboard(false); setActiveTicker(null); setIsManual(false); }}
-              style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(30, 41, 59, 0.9)", border: "1px solid rgba(148, 163, 184, 0.2)", color: "#94a3b8", width: "32px", height: "32px", borderRadius: "50%", fontSize: "16px", cursor: "pointer", zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center" }}
-            >✕</button>
-            
-            <ARDashboard
-              stockData={stockData.data}
-              aiAnalysis={aiAnalysis.analysis}
-              stockLoading={stockData.loading || isSearching}
-              aiLoading={aiAnalysis.loading}
-              error={stockData.error || (voiceMessage?.includes("not found") ? voiceMessage : null)}
-              highlightedStats={highlightedStats}
-              voiceMessage={voiceMessage?.includes("not found") ? null : voiceMessage}
-            />
-          </div>
+      {/* AR Dashboard Overlay is entirely removed to force 3D Visualizations */}
+
+      {isManual && showDashboard && (
+        <div style={{ position: "absolute", bottom: "16px", left: "16px", right: "16px", zIndex: 100, display: "flex", justifyContent: "center" }}>
+          <button 
+            onClick={() => { setShowDashboard(false); setActiveTicker(null); }}
+            style={{ padding: "12px 24px", background: "rgba(56, 189, 248, 0.2)", border: "1px solid rgba(56, 189, 248, 0.4)", borderRadius: "16px", color: "#38bdf8", fontWeight: "bold", cursor: "pointer", backdropFilter: "blur(8px)" }}
+          >
+            Close 3D View
+          </button>
         </div>
       )}
 
