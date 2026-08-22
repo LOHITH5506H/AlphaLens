@@ -78,34 +78,32 @@ function MiniSparkline({ color }: { color: string }) {
 }
 
 export default function StockStats({ data, highlightedStats }: StockStatsProps) {
-  // Fall back to dummy data if values are all null
+  // Fall back to dummy data if price is missing
   const effectiveData =
-    data.current_price === null &&
-    data.pe_ratio === null &&
-    data.eps === null
+    data.price == null
       ? DUMMY_STOCK_DATA
       : data;
 
   const isDummy = effectiveData === DUMMY_STOCK_DATA;
 
   const stats: StatItem[] = [
-    { key: "pe", label: "P/E Ratio", value: effectiveData.pe_ratio?.toFixed(2) ?? "N/A" },
-    { key: "eps", label: "EPS", value: effectiveData.eps ? `$${effectiveData.eps.toFixed(2)}` : "N/A" },
+    { key: "pe", label: "P/E Ratio", value: effectiveData.peRatio?.toFixed(2) ?? "N/A" },
+    { key: "open", label: "Open", value: effectiveData.open != null ? `$${effectiveData.open.toFixed(2)}` : "N/A" },
     {
       key: "market_cap",
       label: "Market Cap",
-      value: formatLargeNumber(effectiveData.market_cap),
+      value: formatLargeNumber(effectiveData.marketCap ?? null),
     },
-    { key: "volume", label: "Volume", value: formatVolume(effectiveData.volume) },
+    { key: "volume", label: "Volume", value: formatVolume(effectiveData.volume ?? null) },
     {
       key: "52w_high",
-      label: "52W High",
-      value: formatPrice(effectiveData.fifty_two_week_high),
+      label: "Day High",
+      value: formatPrice(effectiveData.high ?? null),
     },
     {
       key: "52w_low",
-      label: "52W Low",
-      value: formatPrice(effectiveData.fifty_two_week_low),
+      label: "Day Low",
+      value: formatPrice(effectiveData.low ?? null),
     },
   ];
 
@@ -117,7 +115,7 @@ export default function StockStats({ data, highlightedStats }: StockStatsProps) 
   // Sparkline colors per stat key
   const sparkColors: Record<string, string> = {
     pe: "rgb(96, 165, 250)",       // blue
-    eps: "rgb(52, 211, 153)",      // green
+    open: "rgb(52, 211, 153)",     // green
     market_cap: "rgb(251, 191, 36)", // amber
     volume: "rgb(168, 85, 247)",   // purple
     "52w_high": "rgb(16, 185, 129)", // emerald

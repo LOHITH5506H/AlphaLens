@@ -91,7 +91,7 @@ export default function HomePage() {
 
       stockData.fetch(ticker).then((data) => {
         if (data) {
-          const text = `${data.name} (${data.ticker}) is currently trading at $${data.current_price}. It has a market cap of $${data.market_cap} and a PE ratio of ${data.pe_ratio}.`;
+          const text = `${data.name ?? data.symbol} (${data.symbol}) is currently trading at $${data.price}. It has a market cap of $${data.marketCap ?? 'N/A'} and a PE ratio of ${data.peRatio ?? 'N/A'}.`;
           aiAnalysis.fetch(text);
         }
       });
@@ -144,7 +144,7 @@ export default function HomePage() {
         if (response.intent === "ai_analysis" && activeTickerRef.current) {
           if (stockData.data) {
             const data = stockData.data;
-            const text = `${data.name} (${data.ticker}) is currently trading at $${data.current_price}. It has a market cap of $${data.market_cap} and a PE ratio of ${data.pe_ratio}.`;
+            const text = `${data.name ?? data.symbol} (${data.symbol}) is currently trading at $${data.price}. It has a market cap of $${data.marketCap ?? 'N/A'} and a PE ratio of ${data.peRatio ?? 'N/A'}.`;
             aiAnalysis.fetch(text);
           }
         }
@@ -167,6 +167,13 @@ export default function HomePage() {
           // If we lose tracking, we can optionally hide the 2D dashboard
           // but we leave it for now in case the user wants to read it.
           // The 3D elements will automatically vanish when marker is lost anyway.
+        }}
+        onClose={() => {
+          setShowDashboard(false);
+          setActiveTicker(null);
+          setIsManual(false);
+          stockData.reset();
+          aiAnalysis.reset();
         }}
       />
 
@@ -196,17 +203,6 @@ export default function HomePage() {
       )}
 
       {/* AR Dashboard Overlay is entirely removed to force 3D Visualizations */}
-
-      {isManual && showDashboard && (
-        <div style={{ position: "absolute", bottom: "16px", left: "16px", right: "16px", zIndex: 100, display: "flex", justifyContent: "center" }}>
-          <button 
-            onClick={() => { setShowDashboard(false); setActiveTicker(null); }}
-            style={{ padding: "12px 24px", background: "rgba(56, 189, 248, 0.2)", border: "1px solid rgba(56, 189, 248, 0.4)", borderRadius: "16px", color: "#38bdf8", fontWeight: "bold", cursor: "pointer", backdropFilter: "blur(8px)" }}
-          >
-            Close 3D View
-          </button>
-        </div>
-      )}
 
       {mounted && (
         <VoiceButton

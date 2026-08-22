@@ -1,53 +1,47 @@
-"""
-Pydantic models for AlphaLens API request/response schemas.
-"""
+from typing import List, Optional, Dict, Any, Union
+from pydantic import BaseModel, Field, ConfigDict
 
-from pydantic import BaseModel, Field
-from typing import Literal
+class BaseSchema(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
+class SentimentRequest(BaseSchema):
+    text: str
 
-class PricePoint(BaseModel):
-    """A single data point in the price history time series."""
-    date: str = Field(description="Date in YYYY-MM-DD format")
-    close: float = Field(description="Closing price on this date")
+class SentimentResult(BaseSchema):
+    label: str
+    score: float
+    probabilities: Optional[Dict[str, float]] = None
 
+class AIAnalysis(BaseSchema):
+    summary: Optional[str] = None
+    sentiment: Optional[str] = None
+    score: Optional[float] = None
+    recommendation: Optional[str] = None
+    key_points: Optional[List[str]] = None
+    raw_analysis: Optional[str] = None
 
-class StockData(BaseModel):
-    """Complete stock data payload returned by /api/stock/{ticker}."""
-    ticker: str = Field(description="Stock ticker symbol (e.g. AAPL)")
-    name: str = Field(description="Full company name")
-    current_price: float | None = Field(default=None, description="Current/latest price")
-    market_cap: int | None = Field(default=None, description="Market capitalization in USD")
-    pe_ratio: float | None = Field(default=None, description="Trailing P/E ratio")
-    eps: float | None = Field(default=None, description="Trailing earnings per share")
-    fifty_two_week_high: float | None = Field(default=None, description="52-week high price")
-    fifty_two_week_low: float | None = Field(default=None, description="52-week low price")
-    volume: int | None = Field(default=None, description="Current trading volume")
-    sector: str | None = Field(default=None, description="Company sector")
-    price_history: list[PricePoint] = Field(
-        default_factory=list,
-        description="1-month daily closing prices for charting"
-    )
+class StockData(BaseSchema):
+    symbol: str
+    name: Optional[str] = None
+    price: float
+    change: float
+    change_percent: Optional[float] = Field(default=None, alias="changePercent")
+    high: Optional[float] = None
+    low: Optional[float] = None
+    open: Optional[float] = None
+    previous_close: Optional[float] = Field(default=None, alias="previousClose")
+    volume: Optional[Union[int, float]] = None
+    market_cap: Optional[Union[int, float]] = Field(default=None, alias="marketCap")
+    pe_ratio: Optional[float] = Field(default=None, alias="peRatio")
+    history: Optional[List[Dict[str, Any]]] = None
+    sentiment: Optional[Union[SentimentResult, Dict[str, Any]]] = None
+    analysis: Optional[AIAnalysis] = None
 
+class VoiceCommandRequest(BaseSchema):
+    command: str
 
-class AIAnalysis(BaseModel):
-    """AI-generated investment analysis returned by /api/analyze-sentiment."""
-    positive: float = Field(description="Positive sentiment score (0-100)")
-    neutral: float = Field(description="Neutral sentiment score (0-100)")
-    negative: float = Field(description="Negative sentiment score (0-100)")
-
-class SentimentRequest(BaseModel):
-    text: str = Field(description="Text to analyze")
-
-
-class VoiceCommandRequest(BaseModel):
-    """Request body for the /api/voice endpoint."""
-    transcript: str = Field(description="Raw speech-to-text transcript from the user")
-    ticker: str = Field(description="Currently active ticker symbol in the AR view")
-
-
-class VoiceCommandResponse(BaseModel):
-    """Response from the /api/voice endpoint."""
-    intent: str = Field(description="Parsed user intent (e.g. 'show_pe', 'show_news', 'ai_analysis')")
-    message: str = Field(description="Human-readable response to display")
-    data: dict | None = Field(default=None, description="Optional structured data for the intent")
+class VoiceCommandResponse(BaseSchema):
+    action: Optional[str] = None
+    target: Optional[str] = None
+    response: str
+    data: Optional[Dict[str, Any]] = None

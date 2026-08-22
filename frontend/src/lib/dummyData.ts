@@ -5,7 +5,7 @@
  * once the backend integration is restored.
  */
 
-import type { PricePoint, StockData } from "@/types";
+import type { StockData } from "@/types";
 
 /* =========================================================================
    OHLC Candlestick Data (AAPL-like, 30 trading days)
@@ -94,8 +94,8 @@ export const DUMMY_AREA_DATA: AreaPoint[] = DUMMY_OHLC_DATA.map((d) => ({
    Legacy PricePoint format (for backward compat with existing interfaces)
    ========================================================================= */
 
-/** Maps OHLC data to the existing PricePoint interface used by ARDashboard. */
-export const DUMMY_PRICE_HISTORY: PricePoint[] = DUMMY_OHLC_DATA.map((d) => ({
+/** Maps OHLC data to a simple date/close format for backward compat. */
+export const DUMMY_PRICE_HISTORY = DUMMY_OHLC_DATA.map((d) => ({
   date: d.time,
   close: d.close,
 }));
@@ -104,16 +104,21 @@ export const DUMMY_PRICE_HISTORY: PricePoint[] = DUMMY_OHLC_DATA.map((d) => ({
    Complete StockData object (for StockStats testing)
    ========================================================================= */
 
+/**
+ * Dummy stock data matching the updated StockData schema
+ * (symbol, price, change, changePercent, etc.)
+ */
 export const DUMMY_STOCK_DATA: StockData = {
-  ticker: "AAPL",
+  symbol: "AAPL",
   name: "Apple Inc.",
-  current_price: 194.90,
-  market_cap: 3_020_000_000_000,
-  pe_ratio: 32.45,
-  eps: 6.01,
-  fifty_two_week_high: 199.62,
-  fifty_two_week_low: 164.08,
+  price: 194.90,
+  change: 2.10,
+  changePercent: 1.09,
+  high: 196.50,
+  low: 192.30,
+  open: 193.80,
+  previousClose: 192.80,
   volume: 54_320_000,
-  sector: "Technology",
-  price_history: DUMMY_PRICE_HISTORY,
+  marketCap: 3_020_000_000_000,
+  peRatio: 32.45,
 };

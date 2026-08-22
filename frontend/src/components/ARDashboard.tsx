@@ -60,17 +60,11 @@ export default function ARDashboard({
   if (!stockData) return null;
 
   // Detect demo mode (no live data, will use dummy fallback)
-  const isDemoMode = !stockData.current_price && stockData.price_history.length === 0;
+  const isDemoMode = !stockData.price;
 
-  // Calculate price change
-  const priceChange =
-    stockData.price_history.length >= 2
-      ? stockData.current_price! - stockData.price_history[stockData.price_history.length - 2].close
-      : null;
-  const priceChangePercent =
-    priceChange !== null && stockData.price_history.length >= 2
-      ? (priceChange / stockData.price_history[stockData.price_history.length - 2].close) * 100
-      : null;
+  // Use change values directly from the backend
+  const priceChange = stockData.change ?? null;
+  const priceChangePercent = stockData.changePercent ?? null;
 
   return (
     <div className="ar-dashboard animate-fade-in-up">
@@ -107,32 +101,21 @@ export default function ARDashboard({
       {/* Header */}
       <div className="ar-dashboard-header">
         <div className="logo">
-          {stockData.ticker === "AAPL"
+          {stockData.symbol === "AAPL"
             ? "🍎"
-            : stockData.ticker === "TSLA"
+            : stockData.symbol === "TSLA"
             ? "⚡"
             : "🏭"}
         </div>
         <div style={{ flex: 1 }}>
           <div className="company-name">{stockData.name}</div>
-          <span className="ticker-badge">{stockData.ticker}</span>
-          {stockData.sector && (
-            <span
-              style={{
-                fontSize: "10px",
-                color: "#64748b",
-                marginLeft: "8px",
-              }}
-            >
-              {stockData.sector}
-            </span>
-          )}
+          <span className="ticker-badge">{stockData.symbol}</span>
         </div>
       </div>
 
       {/* Live Price */}
       <div className="price-row">
-        <span className="price">{formatPrice(stockData.current_price)}</span>
+        <span className="price">{formatPrice(stockData.price)}</span>
         {priceChange !== null && (
           <span className={`change ${priceChange >= 0 ? "up" : "down"}`}>
             {priceChange >= 0 ? "▲" : "▼"} {formatPrice(Math.abs(priceChange))}
@@ -166,7 +149,7 @@ export default function ARDashboard({
       <StockStats data={stockData} highlightedStats={highlightedStats} />
 
       {/* Price Chart */}
-      <PriceChart data={stockData.price_history} />
+      <PriceChart data={(stockData.history ?? []).map((h: any) => ({ date: h.date || h.time, close: h.close ?? h.price ?? 0 }))} />
 
       {/* AI Recommendation */}
       {aiLoading && !aiAnalysis && (

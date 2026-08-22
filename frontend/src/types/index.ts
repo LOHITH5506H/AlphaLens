@@ -8,24 +8,48 @@ export interface PricePoint {
   close: number;
 }
 
+/**
+ * Matches the backend StockData Pydantic schema (models/schemas.py).
+ * The backend sends: symbol, price, change, changePercent, high, low, open, etc.
+ */
 export interface StockData {
-  ticker: string;
-  name: string;
-  current_price: number | null;
-  market_cap: number | null;
-  pe_ratio: number | null;
-  eps: number | null;
-  fifty_two_week_high: number | null;
-  fifty_two_week_low: number | null;
-  volume: number | null;
-  sector: string | null;
-  price_history: PricePoint[];
+  symbol: string;
+  name?: string | null;
+  price: number;
+  change: number;
+  changePercent?: number | null;
+  high?: number | null;
+  low?: number | null;
+  open?: number | null;
+  previousClose?: number | null;
+  volume?: number | null;
+  marketCap?: number | null;
+  peRatio?: number | null;
+  history?: Array<Record<string, any>> | null;
+  sentiment?: any | null;
+  analysis?: any | null;
 }
 
+/**
+ * AI Sentiment Analysis result.
+ * 
+ * The backend sentiment service returns flat { positive, neutral, negative } scores.
+ * We also support the structured { label, score, probabilities } format
+ * for forward compatibility and richer 3D visualization.
+ */
 export interface AIAnalysis {
+  // Flat probability scores (current backend format)
   positive: number;
   neutral: number;
   negative: number;
+  // Structured format (derived on the frontend or future backend upgrade)
+  label?: string;
+  score?: number;
+  probabilities?: {
+    positive: number;
+    negative: number;
+    neutral: number;
+  };
 }
 
 export interface VoiceCommandResponse {
