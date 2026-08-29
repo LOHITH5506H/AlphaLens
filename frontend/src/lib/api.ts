@@ -3,7 +3,7 @@
  */
 
 import { API_BASE_URL } from "./constants";
-import type { StockData, AIAnalysis, VoiceCommandResponse } from "@/types";
+import type { StockData, AIAnalysis, VoiceCommandResponse, StockInsights } from "@/types";
 
 /**
  * Fetch stock data for a given ticker.
@@ -15,6 +15,29 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
     throw new Error(error.detail || `Failed to fetch stock data (${res.status})`);
   }
   return res.json();
+}
+
+/**
+ * Fetch LSTM-predicted stock insights (trajectory, volatility, sentiment).
+ * Includes a 15-second timeout since LSTM inference + yfinance can be slow.
+ */
+export async function fetchStockInsights(ticker: string): Promise<StockInsights> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/api/stock-insights/${encodeURIComponent(ticker)}`,
+      { signal: controller.signal }
+    );
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: "Unknown error" }));
+      throw new Error(error.detail || `Failed to fetch stock insights (${res.status})`);
+    }
+    return res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**

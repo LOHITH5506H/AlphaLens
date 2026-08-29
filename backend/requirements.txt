@@ -9,3 +9,6 @@ transformers>=4.30.0
 torch>=2.0.0
 sentencepiece
 tiktoken
+scikit-learn>=1.3.0
+numpy>=1.24.0
+pandas>=2.0.0

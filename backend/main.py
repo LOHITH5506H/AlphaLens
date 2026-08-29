@@ -16,8 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from models.schemas import StockData, AIAnalysis, VoiceCommandRequest, VoiceCommandResponse, SentimentRequest
-from services.stock_service import get_stock_data
+from models.schemas import StockData, AIAnalysis, VoiceCommandRequest, VoiceCommandResponse, SentimentRequest, StockInsightsResponse
+from services.stock_service import get_stock_data, get_stock_insights
 from services.ai_service import process_voice_command
 from services.sentiment_service import analyze_sentiment
 
@@ -100,6 +100,28 @@ async def get_stock(ticker: str):
         )
 
 
+@app.get("/api/stock-insights/{ticker}", response_model=StockInsightsResponse)
+async def fetch_stock_insights(ticker: str):
+    """
+    Get LSTM-predicted 5-day price trajectory, volatility corridor,
+    live fundamentals, and FinBERT sentiment for a ticker.
+
+    Returns predicted prices, upper/lower volatility bounds,
+    PE ratio, market cap, profit margins, and a sentiment score
+    derived from local FinBERT inference on recent news headlines.
+    """
+    try:
+        return get_stock_insights(ticker.upper())
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error("Stock insights error for %s: %s", ticker, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while fetching stock insights.",
+        )
+
+
 @app.get("/api/search/{query}")
 async def search_company(query: str):
     """
@@ -178,6 +200,7 @@ async def handle_voice_command(request: VoiceCommandRequest):
         )
 
     try:
+        # pyrefly: ignore [bad-argument-type]
         result = await process_voice_command(request.transcript, request.ticker)
         return VoiceCommandResponse(
             intent=result.get("intent", "unknown"),

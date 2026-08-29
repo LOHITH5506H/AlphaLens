@@ -37,11 +37,32 @@ class StockData(BaseSchema):
     sentiment: Optional[Union[SentimentResult, Dict[str, Any]]] = None
     analysis: Optional[AIAnalysis] = None
 
+
+class StockInsightsResponse(BaseSchema):
+    """Response schema for the /api/stock-insights endpoint.
+
+    Contains LSTM-predicted trajectory, volatility bounds, fundamentals,
+    and local FinBERT sentiment scoring.
+    """
+    ticker: str
+    current_price: float
+    pe_ratio: Optional[float] = None
+    market_cap: Optional[float] = None
+    profit_margins: Optional[float] = None
+    debt_to_equity: Optional[float] = None
+    predicted_prices: List[float]       # Length 5: Real predicted dollar prices
+    volatility_upper: List[float]       # Length 5: Upper boundary dollar values
+    volatility_lower: List[float]       # Length 5: Lower boundary dollar values
+    sentiment_score: float              # [-1.0 to 1.0] from local FinBERT
+    sentiment_label: str                # "BULLISH", "NEUTRAL", or "BEARISH"
+    prediction_dates: List[str]         # ISO date strings for the next 5 trading days
+
+
 class VoiceCommandRequest(BaseSchema):
-    command: str
+    transcript: str
+    ticker: Optional[str] = None
 
 class VoiceCommandResponse(BaseSchema):
-    action: Optional[str] = None
-    target: Optional[str] = None
-    response: str
+    intent: Optional[str] = None
+    message: str
     data: Optional[Dict[str, Any]] = None

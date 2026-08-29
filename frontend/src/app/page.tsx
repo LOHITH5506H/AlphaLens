@@ -16,6 +16,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import VoiceButton from "@/components/VoiceButton";
 import { useStockData } from "@/hooks/useStockData";
 import { useAIAnalysis } from "@/hooks/useAIAnalysis";
+import { useStockInsights } from "@/hooks/useStockInsights";
 import { useSpeech } from "@/hooks/useSpeech";
 import { sendVoiceCommand, searchTicker } from "@/lib/api";
 
@@ -68,6 +69,7 @@ export default function HomePage() {
 
   const stockData = useStockData();
   const aiAnalysis = useAIAnalysis();
+  const stockInsights = useStockInsights();
   const speech = useSpeech();
 
   const [mounted, setMounted] = useState(false);
@@ -95,8 +97,11 @@ export default function HomePage() {
           aiAnalysis.fetch(text);
         }
       });
+
+      // Fetch LSTM trajectory insights in parallel
+      stockInsights.fetch(ticker);
     },
-    [stockData, aiAnalysis]
+    [stockData, aiAnalysis, stockInsights]
   );
 
   // ----- Manual Search (Company Name -> Ticker) -----
@@ -161,6 +166,7 @@ export default function HomePage() {
         stockData={stockData.data}
         aiAnalysis={aiAnalysis.analysis}
         aiError={aiAnalysis.error}
+        stockInsights={stockInsights.insights}
         isManualMode={isManual}
         onTargetFound={(index, ticker, isFallback) => handleTargetFound(index, ticker, isFallback)}
         onTargetLost={(index) => {
@@ -174,6 +180,7 @@ export default function HomePage() {
           setIsManual(false);
           stockData.reset();
           aiAnalysis.reset();
+          stockInsights.reset();
         }}
       />
 

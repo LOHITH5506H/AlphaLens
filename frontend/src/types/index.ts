@@ -65,3 +65,22 @@ export interface MarkerMapping {
   name: string;
   logo: string; // emoji or icon identifier
 }
+
+/**
+ * LSTM-predicted stock insights from /api/stock-insights endpoint.
+ * Contains 5-day trajectory, volatility corridor, fundamentals, and sentiment.
+ */
+export interface StockInsights {
+  ticker: string;
+  current_price: number;
+  pe_ratio: number | null;
+  market_cap: number | null;
+  profit_margins: number | null;
+  debt_to_equity: number | null;
+  predicted_prices: number[];       // 5 future predicted dollar prices
+  volatility_upper: number[];       // 5 upper boundary dollar values
+  volatility_lower: number[];       // 5 lower boundary dollar values
+  sentiment_score: number;          // [-1.0 to 1.0] from local FinBERT
+  sentiment_label: 'BULLISH' | 'NEUTRAL' | 'BEARISH';
+  prediction_dates: string[];       // ISO date strings
+}

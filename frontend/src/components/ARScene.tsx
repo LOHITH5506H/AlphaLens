@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Center, OrbitControls, PerspectiveCamera } from "@react-three/drei";
+import { EffectComposer, Bloom } from "@react-three/postprocessing";
 
 import { MARKER_MAPPINGS } from "@/lib/constants";
 import { recognizeLogo } from "@/lib/api";
-import type { StockData, AIAnalysis } from "@/types";
+import type { StockData, AIAnalysis, StockInsights } from "@/types";
 import Stock3DVisuals from "./Stock3DVisuals";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,6 +19,7 @@ interface ARSceneProps {
   stockData: StockData | null;
   aiAnalysis?: AIAnalysis | null;
   aiError?: string | null;
+  stockInsights?: StockInsights | null;
   onTargetFound: (targetIndex: number, ticker: string, isFallback?: boolean) => void;
   onTargetLost: (targetIndex: number) => void;
   isManualMode?: boolean;
@@ -28,7 +30,7 @@ interface ARSceneProps {
 // ARTracker — Bridges MindAR computer vision ↔ R3F scene graph
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis }: any) => {
+const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis, stockInsights }: any) => {
   const { camera } = useThree();
   const groupRef = useRef<THREE.Group>(null);
 
@@ -57,7 +59,7 @@ const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis }: any) => {
   return (
     <group ref={groupRef} matrixAutoUpdate={false} visible={true}>
       <group rotation={[Math.PI / 2, 0, 0]} scale={[1.2, 1.2, 1.2]}>
-        <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} />
+        <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} />
       </group>
     </group>
   );
@@ -112,6 +114,7 @@ export default function ARScene({
   stockData,
   aiAnalysis,
   aiError,
+  stockInsights,
   onTargetFound,
   onTargetLost,
   isManualMode,
@@ -313,7 +316,7 @@ export default function ARScene({
                   dampingFactor={0.05}
                 />
                 <Center>
-                  <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} />
+                  <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} />
                 </Center>
               </>
             ) : (
@@ -322,8 +325,19 @@ export default function ARScene({
                 anchors={anchors}
                 stockData={stockData}
                 aiAnalysis={aiAnalysis}
+                stockInsights={stockInsights}
               />
             )}
+
+            {/* Selective Bloom post-processing for neon glow effects */}
+            <EffectComposer>
+              <Bloom
+                intensity={1.6}
+                luminanceThreshold={0.45}
+                luminanceSmoothing={0.9}
+                radius={0.65}
+              />
+            </EffectComposer>
           </Canvas>
         </div>
       )}

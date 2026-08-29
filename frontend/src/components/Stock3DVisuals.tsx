@@ -4,11 +4,12 @@ import React, { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { Text, Float, Line } from "@react-three/drei";
-import type { StockData, AIAnalysis } from "@/types";
+import type { StockData, AIAnalysis, StockInsights } from "@/types";
 
 interface Stock3DVisualsProps {
   data: StockData;
   aiAnalysis?: AIAnalysis | null;
+  stockInsights?: StockInsights | null;
 }
 
 // ── 1. Sci-Fi Gyroscopic Rotating HUD Ring ─────────────────────────────────
@@ -76,9 +77,336 @@ function HolographicParticles({ count = 80 }) {
   );
 }
 
-// ── 3. Main Holographic Dashboard Component ────────────────────────────────
-export default function Stock3DVisuals({ data, aiAnalysis }: Stock3DVisualsProps) {
-  const [activeTab, setActiveTab] = useState<"OVERVIEW" | "RIBBON" | "AI">("OVERVIEW");
+// ── 3. Trajectory Particle Trail ───────────────────────────────────────────
+function TrajectoryParticles({ curve, color }: { curve: THREE.CatmullRomCurve3; color: string }) {
+  const particlesRef = useRef<THREE.Points>(null);
+  const particleCount = 40;
+
+  const positions = useMemo(() => new Float32Array(particleCount * 3), []);
+
+  useFrame(({ clock }) => {
+    if (!particlesRef.current) return;
+    const t = clock.getElapsedTime();
+    const geo = particlesRef.current.geometry;
+    const posAttr = geo.getAttribute("position");
+
+    for (let i = 0; i < particleCount; i++) {
+      const offset = (t * 0.15 + i / particleCount) % 1.0;
+      const point = curve.getPoint(offset);
+      // Add subtle noise for organic feel
+      const noise = Math.sin(t * 3 + i * 0.7) * 0.015;
+      posAttr.setXYZ(i, point.x + noise, point.y + noise, point.z + noise * 0.5);
+    }
+    posAttr.needsUpdate = true;
+  });
+
+  return (
+    <points ref={particlesRef}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          args={[positions, 3]}
+          count={particleCount}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        size={0.025}
+        color={color}
+        transparent
+        opacity={0.9}
+        blending={THREE.AdditiveBlending}
+        depthWrite={false}
+      />
+    </points>
+  );
+}
+
+// ── 4. PREDICT Tab — Trajectory Line + Volatility Corridor ─────────────────
+function PredictionVisuals({ insights }: { insights: StockInsights }) {
+  const {
+    predicted_prices,
+    volatility_upper,
+    volatility_lower,
+    sentiment_score,
+    sentiment_label,
+    current_price,
+    pe_ratio,
+    market_cap,
+    profit_margins,
+    prediction_dates,
+  } = insights;
+
+  // Price delta for the card
+  const priceDelta = predicted_prices[4] - current_price;
+  const priceDeltaPct = (priceDelta / current_price) * 100;
+
+  // ── Color palette based on trajectory ──────────────────────────────────
+  const sentimentColor = useMemo(() => {
+    if (priceDeltaPct >= 0.5) return "#10B981"; // Emerald green (positive)
+    if (priceDeltaPct <= -0.5) return "#EF4444"; // Ruby red (negative)
+    return "#06B6D4"; // Cyan (neutral)
+  }, [priceDeltaPct]);
+
+  const sentimentColorAlt = useMemo(() => {
+    if (priceDeltaPct >= 0.5) return "#34D399";
+    if (priceDeltaPct <= -0.5) return "#F87171";
+    return "#22D3EE";
+  }, [priceDeltaPct]);
+
+  // ── Map prices to 3D coordinates ──────────────────────────────────────
+  // X-axis: time (0 to ~1.2 units), Y-axis: price deviation, Z-axis: depth
+  const W = 3.6; // total width
+  const allPrices = [current_price, ...predicted_prices];
+  const allUpper = [current_price, ...volatility_upper];
+  const allLower = [current_price, ...volatility_lower];
+
+  const priceMin = Math.min(...allLower);
+  const priceMax = Math.max(...allUpper);
+  const priceRange = Math.max(priceMax - priceMin, 0.01);
+  const priceMid = (priceMax + priceMin) / 2;
+
+  const mapY = (price: number) => ((price - priceMid) / priceRange) * 1.4;
+  const mapX = (i: number) => -W / 2 + (i / 5) * W;
+
+  // ── CatmullRomCurve3 through 6 points (current + 5 predicted) ────────
+  const { trajectoryCurve, trajectoryPoints, upperPoints, lowerPoints } = useMemo(() => {
+    const pts: THREE.Vector3[] = [];
+    const upper: THREE.Vector3[] = [];
+    const lower: THREE.Vector3[] = [];
+
+    for (let i = 0; i <= 5; i++) {
+      const x = mapX(i);
+      const z = 0.05;
+      pts.push(new THREE.Vector3(x, mapY(allPrices[i]), z));
+      upper.push(new THREE.Vector3(x, mapY(allUpper[i]), z));
+      lower.push(new THREE.Vector3(x, mapY(allLower[i]), z));
+    }
+
+    const curve = new THREE.CatmullRomCurve3(pts, false, "catmullrom", 0.5);
+    return { trajectoryCurve: curve, trajectoryPoints: pts, upperPoints: upper, lowerPoints: lower };
+  }, [predicted_prices, volatility_upper, volatility_lower, current_price]);
+
+  // Tube geometry for volatility corridor
+  const tubeRadius = useMemo(() => {
+    // Dynamic radius based on average volatility spread
+    const avgSpread = predicted_prices.reduce((sum, p, i) => {
+      return sum + (volatility_upper[i] - volatility_lower[i]);
+    }, 0) / predicted_prices.length;
+    return Math.max(0.015, Math.min(0.08, (avgSpread / priceRange) * 0.4));
+  }, [predicted_prices, volatility_upper, volatility_lower, priceRange]);
+
+  // Smoothly interpolated line points
+  const curveLinePoints = useMemo(() => {
+    return trajectoryCurve.getPoints(64).map(
+      (p) => [p.x, p.y, p.z] as [number, number, number]
+    );
+  }, [trajectoryCurve]);
+
+  // Secondary echo lines for upper/lower bounds
+  const upperLinePoints = useMemo(() => {
+    const c = new THREE.CatmullRomCurve3(upperPoints, false, "catmullrom", 0.5);
+    return c.getPoints(48).map((p) => [p.x, p.y, p.z] as [number, number, number]);
+  }, [upperPoints]);
+
+  const lowerLinePoints = useMemo(() => {
+    const c = new THREE.CatmullRomCurve3(lowerPoints, false, "catmullrom", 0.5);
+    return c.getPoints(48).map((p) => [p.x, p.y, p.z] as [number, number, number]);
+  }, [lowerPoints]);
+
+  // Format market cap
+  const fmtMarketCap = useMemo(() => {
+    if (!market_cap) return "N/A";
+    if (market_cap >= 1e12) return `$${(market_cap / 1e12).toFixed(1)}T`;
+    if (market_cap >= 1e9) return `$${(market_cap / 1e9).toFixed(1)}B`;
+    if (market_cap >= 1e6) return `$${(market_cap / 1e6).toFixed(1)}M`;
+    return `$${market_cap.toLocaleString()}`;
+  }, [market_cap]);
+
+  return (
+    <group position={[0, -0.2, 0.1]}>
+      {/* Section header */}
+      <Text position={[-1.7, 1.0, 0]} fontSize={0.16} color={sentimentColor} anchorX="left">
+        ◈ LSTM_TRAJECTORY_FORECAST
+      </Text>
+
+      {/* ── Volatility Corridor (frosted glass tube) ───────────────────── */}
+      <mesh>
+        <tubeGeometry args={[trajectoryCurve, 64, tubeRadius, 16, false]} />
+        <meshPhysicalMaterial
+          color={sentimentColor}
+          transmission={0.88}
+          roughness={0.12}
+          metalness={0.05}
+          transparent
+          opacity={0.6}
+          ior={1.45}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* ── Main trajectory spline (neon glow) ─────────────────────────── */}
+      <Line
+        points={curveLinePoints}
+        color={sentimentColor}
+        lineWidth={4}
+        transparent
+        opacity={1}
+      />
+
+      {/* ── Secondary glow echo ────────────────────────────────────────── */}
+      <Line
+        points={curveLinePoints}
+        color={sentimentColorAlt}
+        lineWidth={1.5}
+        transparent
+        opacity={0.5}
+      />
+
+      {/* ── Upper/Lower volatility bound lines ─────────────────────────── */}
+      <Line
+        points={upperLinePoints}
+        color={sentimentColor}
+        lineWidth={1}
+        transparent
+        opacity={0.3}
+      />
+      <Line
+        points={lowerLinePoints}
+        color={sentimentColor}
+        lineWidth={1}
+        transparent
+        opacity={0.3}
+      />
+
+      {/* ── Particle trail along trajectory ────────────────────────────── */}
+      <TrajectoryParticles curve={trajectoryCurve} color={sentimentColor} />
+
+      {/* ── Price keypoints at each predicted day ──────────────────────── */}
+      {/* Current price anchor */}
+      <group position={[mapX(0), mapY(current_price), 0.05]}>
+        <mesh>
+          <sphereGeometry args={[0.04, 16, 16]} />
+          <meshBasicMaterial color="#ffffff" />
+        </mesh>
+        <Text position={[0, 0.15, 0]} fontSize={0.1} color="#ffffff" anchorX="center">
+          NOW
+        </Text>
+        <Text position={[0, -0.12, 0]} fontSize={0.09} color="#94a3b8" anchorX="center">
+          {`$${current_price.toFixed(2)}`}
+        </Text>
+      </group>
+
+      {/* Predicted price nodes */}
+      {predicted_prices.map((price, i) => {
+        const x = mapX(i + 1);
+        const y = mapY(price);
+        const dateLabel = prediction_dates[i]
+          ? prediction_dates[i].slice(5) // MM-DD
+          : `D+${i + 1}`;
+        return (
+          <group key={i} position={[x, y, 0.05]}>
+            {/* Compact Glowing keypoint */}
+            <mesh>
+              <sphereGeometry args={[0.025, 16, 16]} />
+              <meshBasicMaterial
+                color={sentimentColor}
+                transparent
+                opacity={1}
+              />
+            </mesh>
+            {/* Price label */}
+            <Text position={[0, 0.1, 0]} fontSize={0.08} color="#ffffff" anchorX="center">
+              {`$${price.toFixed(2)}`}
+            </Text>
+            {/* Date label */}
+            <Text position={[0, -0.09, 0]} fontSize={0.06} color="#94a3b8" anchorX="center">
+              {dateLabel}
+            </Text>
+          </group>
+        );
+      })}
+
+      {/* ── Floating Fundamental Cards ─────────────────────────────────── */}
+      {/* Left card: Valuation HUD */}
+      <group position={[-1.8, -0.85, 0.15]}>
+        <mesh>
+          <planeGeometry args={[1.2, 0.55]} />
+          <meshBasicMaterial
+            color="#0a192f"
+            transparent
+            opacity={0.7}
+          />
+        </mesh>
+        {/* Border */}
+        <Line
+          points={[
+            [-0.6, 0.275, 0.01], [0.6, 0.275, 0.01],
+            [0.6, -0.275, 0.01], [-0.6, -0.275, 0.01],
+            [-0.6, 0.275, 0.01],
+          ]}
+          color={sentimentColor}
+          lineWidth={1}
+          transparent
+          opacity={0.4}
+        />
+        <Text position={[0, 0.17, 0.02]} fontSize={0.08} color={sentimentColor} anchorX="center">
+          ◈ VALUATION
+        </Text>
+        <Text position={[-0.5, 0.02, 0.02]} fontSize={0.08} color="#94a3b8" anchorX="left">
+          {`P/E:     ${pe_ratio?.toFixed(1) ?? "N/A"}`}
+        </Text>
+        <Text position={[-0.5, -0.12, 0.02]} fontSize={0.08} color="#94a3b8" anchorX="left">
+          {`Mkt Cap: ${fmtMarketCap}`}
+        </Text>
+        <Text position={[-0.5, -0.22, 0.02]} fontSize={0.07} color="#64748b" anchorX="left">
+          {`Margin:  ${profit_margins ? (profit_margins * 100).toFixed(1) + "%" : "N/A"}`}
+        </Text>
+      </group>
+
+      {/* Right card: 5D Target Prediction */}
+      <group position={[1.8, -0.85, 0.15]}>
+        <mesh>
+          <planeGeometry args={[1.2, 0.55]} />
+          <meshBasicMaterial
+            color="#0a192f"
+            transparent
+            opacity={0.7}
+          />
+        </mesh>
+        <Line
+          points={[
+            [-0.6, 0.275, 0.01], [0.6, 0.275, 0.01],
+            [0.6, -0.275, 0.01], [-0.6, -0.275, 0.01],
+            [-0.6, 0.275, 0.01],
+          ]}
+          color={sentimentColor}
+          lineWidth={1}
+          transparent
+          opacity={0.4}
+        />
+        <Text position={[0, 0.17, 0.02]} fontSize={0.08} color={sentimentColor} anchorX="center">
+          ◈ 5D TARGET PREDICTION
+        </Text>
+        <Text position={[-0.5, 0.02, 0.02]} fontSize={0.10} color={
+          priceDelta >= 0 ? "#10B981" : "#EF4444"
+        } anchorX="left">
+          {`$${predicted_prices[4].toFixed(2)} (${priceDelta >= 0 ? "+" : ""}${priceDeltaPct.toFixed(2)}%)`}
+        </Text>
+        <Text position={[-0.5, -0.12, 0.02]} fontSize={0.08} color="#94a3b8" anchorX="left">
+          {`Signal:  ${sentiment_label}`}
+        </Text>
+        <Text position={[-0.5, -0.22, 0.02]} fontSize={0.07} color="#64748b" anchorX="left">
+          {`AI Score: ${(sentiment_score * 100).toFixed(0)}%`}
+        </Text>
+      </group>
+    </group>
+  );
+}
+
+// ── 5. Main Holographic Dashboard Component ────────────────────────────────
+export default function Stock3DVisuals({ data, aiAnalysis, stockInsights }: Stock3DVisualsProps) {
+  const [activeTab, setActiveTab] = useState<"OVERVIEW" | "RIBBON" | "AI" | "PREDICT">("OVERVIEW");
   const coreRef = useRef<THREE.Group>(null);
   const mainGroupRef = useRef<THREE.Group>(null);
 
@@ -133,16 +461,19 @@ export default function Stock3DVisuals({ data, aiAnalysis }: Stock3DVisualsProps
     }
   });
 
+  // Tab list: add PREDICT only when insights are available
+  const tabs = useMemo(() => {
+    const base: ("OVERVIEW" | "RIBBON" | "AI" | "PREDICT")[] = ["OVERVIEW", "RIBBON", "AI"];
+    if (stockInsights) base.push("PREDICT");
+    return base;
+  }, [stockInsights]);
+
   return (
     <Float speed={2} rotationIntensity={0.08} floatIntensity={0.2}>
       <group ref={mainGroupRef}>
         <HolographicParticles count={100} />
 
-        {/* ── 1. Holographic Floor Grid ── */}
-        <group position={[0, -2.0, 0]} rotation={[-Math.PI / 2.3, 0, 0]}>
-          <gridHelper args={[8, 16, holoColor, "#0f2744"]} />
-          <GyroRing radius={3.5} tube={0.015} speed={0.15} axis="z" color={holoColor} opacity={0.3} />
-        </group>
+        {/* ── 1. Holographic Floor Grid (Removed for clarity) ── */}
 
         {/* ── 2. Top Header HUD: Floating Ticker & Volumetric Price ── */}
         <group position={[0, 1.8, 0.2]}>
@@ -191,9 +522,10 @@ export default function Stock3DVisuals({ data, aiAnalysis }: Stock3DVisualsProps
 
         {/* ── 3. Interactive 3D Mode Selector Tabs ── */}
         <group position={[0, 1.1, 0.2]}>
-          {(["OVERVIEW", "RIBBON", "AI"] as const).map((tab, idx) => {
+          {tabs.map((tab, idx) => {
             const isSelected = activeTab === tab;
-            const xPos = (idx - 1) * 1.8;
+            const totalTabs = tabs.length;
+            const xPos = (idx - (totalTabs - 1) / 2) * 1.5;
             return (
               <group
                 key={tab}
@@ -205,15 +537,15 @@ export default function Stock3DVisuals({ data, aiAnalysis }: Stock3DVisualsProps
               >
                 {/* 3D Tab Base */}
                 <mesh position={[0, 0, 0]}>
-                  <boxGeometry args={[1.5, 0.26, 0.05]} />
+                  <boxGeometry args={[1.3, 0.26, 0.05]} />
                   <meshBasicMaterial
-                    color={isSelected ? holoColor : "#0a192f"}
+                    color={isSelected ? (tab === "PREDICT" ? "#10B981" : holoColor) : "#0a192f"}
                     transparent
                     opacity={isSelected ? 0.35 : 0.6}
                     blending={THREE.AdditiveBlending}
                   />
                 </mesh>
-                <Text position={[0, 0, 0.05]} fontSize={0.13} color={isSelected ? "#ffffff" : "#64748b"}>
+                <Text position={[0, 0, 0.05]} fontSize={0.11} color={isSelected ? "#ffffff" : "#64748b"}>
                   {tab}
                 </Text>
               </group>
@@ -319,6 +651,11 @@ export default function Stock3DVisuals({ data, aiAnalysis }: Stock3DVisualsProps
               {`[ ${sentiment} ]`}
             </Text>
           </group>
+        )}
+
+        {/* VIEW D: PREDICT — LSTM Trajectory + Volatility Corridor */}
+        {activeTab === "PREDICT" && stockInsights && (
+          <PredictionVisuals insights={stockInsights} />
         )}
 
         {/* ── 5. Holographic Bottom Status Telemetry ── */}

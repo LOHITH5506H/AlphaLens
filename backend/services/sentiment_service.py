@@ -79,3 +79,75 @@ def analyze_sentiment(text: str) -> dict:
     Wrapper function expected by main.py to handle sentiment analysis requests.
     """
     return sentiment_model.predict(text)
+
+
+def analyze_ticker_sentiment(ticker: str) -> tuple[float, str]:
+    """
+    Scrape recent headlines for a ticker via yfinance, run batch inference
+    through the local FinBERT model, and return an aggregated sentiment score.
+
+    Returns:
+        (score, label) where score ∈ [-1.0, 1.0] and label ∈
+        {"BULLISH", "NEUTRAL", "BEARISH"}
+    """
+    import yfinance as yf
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        stock = yf.Ticker(ticker)
+        news_items = stock.news or []
+    except Exception as e:
+        logger.warning("Failed to fetch news for %s: %s", ticker, e)
+        news_items = []
+
+    # Extract headline titles from the news feed
+    headlines: list[str] = []
+    for item in news_items[:15]:  # Cap at 15 most recent
+        # yfinance news structure: item may have 'title' directly or nested
+        title = None
+        if isinstance(item, dict):
+            title = item.get("title") or item.get("content", {}).get("title")
+        if title and isinstance(title, str) and len(title.strip()) > 5:
+            headlines.append(title.strip())
+
+    if not headlines:
+        logger.info("No news headlines found for %s, returning neutral sentiment", ticker)
+        return 0.0, "NEUTRAL"
+
+    # Run FinBERT inference on each headline and aggregate
+    scores: list[float] = []
+    for headline in headlines:
+        try:
+            result = sentiment_model.predict(headline)
+            pos = result.get("positive", 0.0)
+            neg = result.get("negative", 0.0)
+            # Map to [-1, 1]: positive contributes positively, negative negatively
+            score = pos - neg
+            scores.append(score)
+        except Exception as e:
+            logger.warning("Sentiment inference failed for headline '%s': %s", headline[:50], e)
+            continue
+
+    if not scores:
+        return 0.0, "NEUTRAL"
+
+    # Aggregate: mean of all headline scores
+    avg_score = sum(scores) / len(scores)
+    # Clamp to [-1.0, 1.0]
+    avg_score = max(-1.0, min(1.0, avg_score))
+
+    # Classify
+    if avg_score >= 0.15:
+        label = "BULLISH"
+    elif avg_score <= -0.15:
+        label = "BEARISH"
+    else:
+        label = "NEUTRAL"
+
+    logger.info(
+        "Sentiment for %s: %.3f (%s) from %d headlines",
+        ticker, avg_score, label, len(scores),
+    )
+    return avg_score, label
