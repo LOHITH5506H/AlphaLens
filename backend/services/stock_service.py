@@ -9,6 +9,8 @@ extrapolation mode using recent price momentum.
 
 import json
 import logging
+import time
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -22,6 +24,71 @@ import yfinance as yf
 from models.schemas import StockInsightsResponse
 
 logger = logging.getLogger(__name__)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TTL Cache — lightweight time-based cache to avoid Yahoo Finance rate limits
+# ──────────────────────────────────────────────────────────────────────────────
+
+class _TTLCache:
+    """Thread-safe in-memory cache with per-key TTL expiration."""
+
+    def __init__(self, default_ttl: int = 300):
+        self._store: dict[str, tuple[float, object]] = {}
+        self._lock = threading.Lock()
+        self._default_ttl = default_ttl  # seconds
+
+    def get(self, key: str) -> Optional[object]:
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return None
+            expires_at, value = entry
+            if time.time() > expires_at:
+                del self._store[key]
+                return None
+            return value
+
+    def set(self, key: str, value: object, ttl: Optional[int] = None) -> None:
+        with self._lock:
+            ttl = ttl if ttl is not None else self._default_ttl
+            self._store[key] = (time.time() + ttl, value)
+
+    def invalidate(self, key: str) -> None:
+        with self._lock:
+            self._store.pop(key, None)
+
+
+# 5-minute TTL (300 seconds) for both quote info and historical data
+_info_cache = _TTLCache(default_ttl=300)
+_history_cache = _TTLCache(default_ttl=300)
+
+
+def _get_ticker_info(symbol: str) -> dict:
+    """Fetch ticker info with caching."""
+    cached = _info_cache.get(symbol)
+    if cached is not None:
+        logger.debug("Cache HIT for %s info", symbol)
+        return cached  # type: ignore
+    logger.debug("Cache MISS for %s info, fetching from yfinance", symbol)
+    info = yf.Ticker(symbol).info or {}
+    _info_cache.set(symbol, info)
+    return info
+
+
+def _get_historical_data(symbol: str, period: str = "3mo", interval: str = "1d") -> pd.DataFrame:
+    """Fetch historical OHLCV with caching."""
+    cache_key = f"{symbol}_{period}_{interval}"
+    cached = _history_cache.get(cache_key)
+    if cached is not None:
+        logger.debug("Cache HIT for %s history", symbol)
+        return cached  # type: ignore
+    logger.debug("Cache MISS for %s history, fetching from yfinance", symbol)
+    hist = yf.download(symbol, period=period, interval=interval, progress=False)
+    if isinstance(hist.columns, pd.MultiIndex):
+        hist.columns = hist.columns.droplevel(1)
+    _history_cache.set(cache_key, hist)
+    return hist
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # LSTM Model Definition (must match the Colab training notebook exactly)
@@ -123,6 +190,7 @@ def _load_trajectory_model() -> bool:
             output_dim=_model_config.get("output_dim", 5),
             dropout=_model_config.get("dropout", 0.2),
         )
+        # Ensure CPU loading mapping
         state_dict = torch.load(weights_path, map_location="cpu", weights_only=True)
         _lstm_model.load_state_dict(state_dict)
         _lstm_model.eval()
@@ -223,13 +291,13 @@ def _get_next_trading_dates(n: int = 5) -> list[str]:
 def get_stock_data(symbol: str) -> dict:
     """
     Fetch live stock data for a given symbol via yfinance.
-    Returns a dictionary matching the StockData schema.
+    Returns a dictionary matching the StockData schema, including
+    OHLC history for the PriceChart candlestick view.
     """
     symbol = symbol.upper()
 
     try:
-        ticker_obj = yf.Ticker(symbol)
-        info = ticker_obj.info or {}
+        info = _get_ticker_info(symbol)
 
         # Current price — try multiple fields for resilience
         price = (
@@ -241,6 +309,24 @@ def get_stock_data(symbol: str) -> dict:
         prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose") or price
         change = round(price - prev_close, 2) if price and prev_close else 0.0
         change_pct = round((change / prev_close) * 100, 2) if prev_close else 0.0
+
+        # Fetch 1-month OHLCV history for the PriceChart candlestick view
+        history_list = []
+        try:
+            hist = _get_historical_data(symbol, period="1mo", interval="1d")
+            if not hist.empty:
+                for idx, row in hist.iterrows():
+                    date_str = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
+                    history_list.append({
+                        "date": date_str,
+                        "open": round(float(row["Open"]), 2),
+                        "high": round(float(row["High"]), 2),
+                        "low": round(float(row["Low"]), 2),
+                        "close": round(float(row["Close"]), 2),
+                        "volume": int(row["Volume"]),
+                    })
+        except Exception as e:
+            logger.warning("Failed to fetch OHLC history for %s: %s", symbol, e)
 
         return {
             "symbol": symbol,
@@ -255,6 +341,7 @@ def get_stock_data(symbol: str) -> dict:
             "volume": info.get("volume") or info.get("regularMarketVolume"),
             "marketCap": info.get("marketCap"),
             "peRatio": info.get("trailingPE"),
+            "history": history_list if history_list else None,
         }
 
     except Exception as e:
@@ -266,30 +353,54 @@ def get_stock_data(symbol: str) -> dict:
 # Public API: search_company_ticker
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Well-known company name → ticker mapping for instant resolution
+_KNOWN_COMPANIES = {
+    "apple": "AAPL",
+    "google": "GOOGL",
+    "alphabet": "GOOGL",
+    "microsoft": "MSFT",
+    "amazon": "AMZN",
+    "tesla": "TSLA",
+    "meta": "META",
+    "facebook": "META",
+    "netflix": "NFLX",
+    "nvidia": "NVDA",
+    "reliance": "RELIANCE.NS",
+    "tata": "TCS.NS",
+    "infosys": "INFY.NS",
+}
+
+
 def search_company_ticker(query: str) -> str:
     """
-    Mock function to resolve a company name to a stock ticker symbol.
-    Expected by main.py for the search endpoint.
+    Resolve a company name to a stock ticker symbol.
+    Tries the known-companies map first, then yfinance search as fallback.
     """
-    query = query.lower().strip()
+    query_lower = query.lower().strip()
 
-    # A simple mock database for common tests
-    mock_db = {
-        "apple": "AAPL",
-        "google": "GOOGL",
-        "microsoft": "MSFT",
-        "amazon": "AMZN",
-        "tesla": "TSLA",
-        "meta": "META",
-        "netflix": "NFLX",
-        "nvidia": "NVDA",
-    }
+    # Fast path: known companies
+    if query_lower in _KNOWN_COMPANIES:
+        return _KNOWN_COMPANIES[query_lower]
 
-    # Return the mapped ticker, or automatically generate a fallback 4-letter ticker
-    if query in mock_db:
-        return mock_db[query]
+    # If query looks like a ticker already (all uppercase, <= 5 chars), return it
+    query_stripped = query.strip()
+    if query_stripped.isupper() and len(query_stripped) <= 5 and query_stripped.isalpha():
+        return query_stripped
 
-    fallback = query.upper()[:4] if len(query) >= 4 else query.upper()
+    # Try yfinance search dynamically
+    try:
+        search_results = yf.Search(query_stripped)
+        if hasattr(search_results, "quotes") and search_results.quotes:
+            for quote in search_results.quotes:
+                ticker = quote.get("symbol")
+                if ticker:
+                    logger.info("yfinance search: '%s' → %s", query, ticker)
+                    return ticker
+    except Exception as e:
+        logger.warning("yfinance search failed for '%s': %s", query, e)
+
+    # Last resort: generate a fallback ticker from the query
+    fallback = query_stripped.upper()[:4] if len(query_stripped) >= 4 else query_stripped.upper()
     return fallback
 
 
@@ -311,8 +422,7 @@ def get_stock_insights(ticker: str) -> StockInsightsResponse:
 
     # ── 1. Fetch Fundamentals ──────────────────────────────────────────────
     try:
-        ticker_obj = yf.Ticker(ticker)
-        info = ticker_obj.info or {}
+        info = _get_ticker_info(ticker)
     except Exception as e:
         logger.error("yfinance info error for %s: %s", ticker, e)
         info = {}
@@ -328,11 +438,10 @@ def get_stock_insights(ticker: str) -> StockInsightsResponse:
     profit_margins = info.get("profitMargins")
     debt_to_equity = info.get("debtToEquity")
 
-    # ── 2. Fetch Historical Data (40 days for indicator warm-up) ───────────
+    # ── 2. Fetch Historical Data (6 months for indicator warm-up) ──────────
+    # Need 6mo because SMA_50 consumes 50 rows, leaving enough for lookback=30
     try:
-        hist = yf.download(ticker, period="3mo", interval="1d", progress=False)
-        if isinstance(hist.columns, pd.MultiIndex):
-            hist.columns = hist.columns.droplevel(1)
+        hist = _get_historical_data(ticker, period="6mo", interval="1d")
     except Exception as e:
         logger.error("yfinance history error for %s: %s", ticker, e)
         hist = pd.DataFrame()
@@ -397,11 +506,15 @@ def get_stock_insights(ticker: str) -> StockInsightsResponse:
     # ── 6. Local FinBERT Sentiment ─────────────────────────────────────────
     try:
         from services.sentiment_service import analyze_ticker_sentiment
-        sentiment_score, sentiment_label = analyze_ticker_sentiment(ticker)
+        sentiment_data = analyze_ticker_sentiment(ticker)
+        sentiment_score = sentiment_data.get("sentiment_score", 0.0)
+        sentiment_label = sentiment_data.get("sentiment_label", "NEUTRAL")
+        headline_count = sentiment_data.get("headline_count", 0)
     except Exception as e:
         logger.warning("Sentiment analysis failed for %s: %s", ticker, e)
         sentiment_score = 0.0
         sentiment_label = "NEUTRAL"
+        headline_count = 0
 
     # ── 7. Prediction Dates ────────────────────────────────────────────────
     prediction_dates = _get_next_trading_dates(5)
@@ -416,9 +529,10 @@ def get_stock_insights(ticker: str) -> StockInsightsResponse:
         predicted_prices=predicted_prices,
         volatility_upper=volatility_upper,
         volatility_lower=volatility_lower,
-        sentiment_score=round(sentiment_score, 4),
+        sentiment_score=sentiment_score,
         sentiment_label=sentiment_label,
         prediction_dates=prediction_dates,
+        headline_count=headline_count,
     )
 
 
@@ -452,4 +566,5 @@ def _fallback_insights(
         sentiment_score=0.0,
         sentiment_label="NEUTRAL",
         prediction_dates=_get_next_trading_dates(5),
+        headline_count=0,
     )

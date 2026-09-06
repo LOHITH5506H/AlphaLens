@@ -1,11 +1,24 @@
-import os
-import torch
+"""
+FinBERT sentiment analysis service — local CPU inference.
+
+Loads ProsusAI/FinBERT from backend/models/finbert/ at startup and
+provides both single-text and ticker-aggregate sentiment analysis.
+
+All inference is forced to CPU per the hardware constraint.
+"""
+
+import logging
 from pathlib import Path
+
+import torch
 from transformers import BertTokenizer, BertForSequenceClassification
 
 # Dynamically resolves to backend/models/finbert regardless of execution directory
 BASE_DIR = Path(__file__).resolve().parent.parent
 MODEL_PATH = str(BASE_DIR / "models" / "finbert")
+
+logger = logging.getLogger(__name__)
+
 
 class FinancialSentimentModel:
     tokenizer: BertTokenizer
@@ -13,12 +26,15 @@ class FinancialSentimentModel:
     labels = {0: "positive", 1: "negative", 2: "neutral"}
 
     def __init__(self, model_path: str = MODEL_PATH):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+        # Force CPU — no GPU on this machine
+        self.device = torch.device("cpu")
 
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model weights not found at {model_path}. Did you run the download script?")
+        if not Path(model_path).exists():
+            raise FileNotFoundError(
+                f"Model weights not found at {model_path}. Did you run the download script?"
+            )
 
-        print(f"Loading local FinBERT model onto {self.device}...")
+        logger.info("Loading local FinBERT model onto %s...", self.device)
 
         tokenizer = BertTokenizer.from_pretrained(model_path, local_files_only=True)
         model = BertForSequenceClassification.from_pretrained(model_path, local_files_only=True)
@@ -32,11 +48,11 @@ class FinancialSentimentModel:
 
     def predict(self, text: str) -> dict:
         inputs = self.tokenizer(
-            text, 
-            return_tensors="pt", 
-            padding=True, 
-            truncation=True, 
-            max_length=512
+            text,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=512,
         ).to(self.device)
 
         with torch.no_grad():
@@ -46,7 +62,6 @@ class FinancialSentimentModel:
         probs_list: list[float] = probabilities.tolist()
         top_class_id: int = int(torch.argmax(probabilities).item())
 
-        # Safely extract scores based on FinBERT's output indices
         pos_score = round(probs_list[0], 4) if len(probs_list) > 0 else 0.0
         neg_score = round(probs_list[1], 4) if len(probs_list) > 1 else 0.0
         neu_score = round(probs_list[2], 4) if len(probs_list) > 2 else 0.0
@@ -57,23 +72,23 @@ class FinancialSentimentModel:
         probs_dict = {
             "positive": pos_score,
             "negative": neg_score,
-            "neutral": neu_score
+            "neutral": neu_score,
         }
 
-        # The Omni-Dictionary: Satisfies any key lookup main.py attempts
         return {
             "label": label_str,
             "score": max_score,
             "probabilities": probs_dict,
             "positive": pos_score,
             "negative": neg_score,
-            "neutral": neu_score
+            "neutral": neu_score,
         }
+
 
 # Initialize singleton instance
 sentiment_model = FinancialSentimentModel()
 
-# Wrapper function OUTSIDE the class, expected by main.py
+
 def analyze_sentiment(text: str) -> dict:
     """
     Wrapper function expected by main.py to handle sentiment analysis requests.
@@ -81,19 +96,51 @@ def analyze_sentiment(text: str) -> dict:
     return sentiment_model.predict(text)
 
 
-def analyze_ticker_sentiment(ticker: str) -> tuple[float, str]:
+def _extract_headline_title(item: object) -> str | None:
+    """
+    Robustly extract a headline title from a yfinance news item.
+    Highly fault-tolerant and recursive.
+    """
+    if isinstance(item, str):
+        stripped = item.strip()
+        return stripped if len(stripped) > 5 else None
+
+    if isinstance(item, list):
+        for i in item:
+            res = _extract_headline_title(i)
+            if res:
+                return res
+        return None
+
+    if isinstance(item, dict):
+        # Prioritize known keys
+        for key in ["title", "headline", "summary"]:
+            val = item.get(key)
+            if isinstance(val, str) and len(val.strip()) > 5:
+                return val.strip()
+
+        # Recurse over values
+        for val in item.values():
+            res = _extract_headline_title(val)
+            if res:
+                return res
+
+    return None
+
+
+def analyze_ticker_sentiment(ticker: str) -> dict:
     """
     Scrape recent headlines for a ticker via yfinance, run batch inference
-    through the local FinBERT model, and return an aggregated sentiment score.
+    through the local FinBERT model, and return an aggregated sentiment payload.
 
     Returns:
-        (score, label) where score ∈ [-1.0, 1.0] and label ∈
-        {"BULLISH", "NEUTRAL", "BEARISH"}
+        dict: {
+            "sentiment_label": str (BULLISH, NEUTRAL, or BEARISH),
+            "sentiment_score": float (confidence percentage),
+            "headline_count": int (number of articles analyzed)
+        }
     """
     import yfinance as yf
-    import logging
-
-    logger = logging.getLogger(__name__)
 
     try:
         stock = yf.Ticker(ticker)
@@ -105,16 +152,17 @@ def analyze_ticker_sentiment(ticker: str) -> tuple[float, str]:
     # Extract headline titles from the news feed
     headlines: list[str] = []
     for item in news_items[:15]:  # Cap at 15 most recent
-        # yfinance news structure: item may have 'title' directly or nested
-        title = None
-        if isinstance(item, dict):
-            title = item.get("title") or item.get("content", {}).get("title")
-        if title and isinstance(title, str) and len(title.strip()) > 5:
-            headlines.append(title.strip())
+        title = _extract_headline_title(item)
+        if title:
+            headlines.append(title)
 
     if not headlines:
         logger.info("No news headlines found for %s, returning neutral sentiment", ticker)
-        return 0.0, "NEUTRAL"
+        return {
+            "sentiment_label": "NEUTRAL",
+            "sentiment_score": 0.0,
+            "headline_count": 0
+        }
 
     # Run FinBERT inference on each headline and aggregate
     scores: list[float] = []
@@ -131,7 +179,11 @@ def analyze_ticker_sentiment(ticker: str) -> tuple[float, str]:
             continue
 
     if not scores:
-        return 0.0, "NEUTRAL"
+        return {
+            "sentiment_label": "NEUTRAL",
+            "sentiment_score": 0.0,
+            "headline_count": 0
+        }
 
     # Aggregate: mean of all headline scores
     avg_score = sum(scores) / len(scores)
@@ -145,9 +197,16 @@ def analyze_ticker_sentiment(ticker: str) -> tuple[float, str]:
         label = "BEARISH"
     else:
         label = "NEUTRAL"
+        
+    # Convert score to confidence percentage
+    percentage_score = round(avg_score * 100, 2)
 
     logger.info(
-        "Sentiment for %s: %.3f (%s) from %d headlines",
-        ticker, avg_score, label, len(scores),
+        "Sentiment for %s: %.2f%% (%s) from %d headlines",
+        ticker, percentage_score, label, len(scores),
     )
-    return avg_score, label
+    return {
+        "sentiment_label": label,
+        "sentiment_score": percentage_score,
+        "headline_count": len(scores)
+    }

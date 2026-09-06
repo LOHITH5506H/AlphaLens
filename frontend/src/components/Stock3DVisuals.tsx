@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { Text, Float, Line } from "@react-three/drei";
@@ -10,6 +10,8 @@ interface Stock3DVisualsProps {
   data: StockData;
   aiAnalysis?: AIAnalysis | null;
   stockInsights?: StockInsights | null;
+  activeTab?: "OVERVIEW" | "RIBBON" | "AI" | "PREDICT" | "OPTIONS";
+  onPinchStateChange?: (isPinching: boolean) => void;
 }
 
 // ── 1. Sci-Fi Gyroscopic Rotating HUD Ring ─────────────────────────────────
@@ -397,16 +399,115 @@ function PredictionVisuals({ insights }: { insights: StockInsights }) {
           {`Signal:  ${sentiment_label}`}
         </Text>
         <Text position={[-0.5, -0.22, 0.02]} fontSize={0.07} color="#64748b" anchorX="left">
-          {`AI Score: ${(sentiment_score * 100).toFixed(0)}%`}
+          {`AI Score: ${(sentiment_score).toFixed(0)}%`}
         </Text>
       </group>
     </group>
   );
 }
 
-// ── 5. Main Holographic Dashboard Component ────────────────────────────────
-export default function Stock3DVisuals({ data, aiAnalysis, stockInsights }: Stock3DVisualsProps) {
-  const [activeTab, setActiveTab] = useState<"OVERVIEW" | "RIBBON" | "AI" | "PREDICT">("OVERVIEW");
+// ── 5. OPTIONS Tab — Volatility Surface & Implied Chain ───────────────────
+function OptionsVisuals({ price, color, onPinchStateChange }: { price: number, color: string, onPinchStateChange?: (p: boolean) => void }) {
+  const geoRef = useRef<THREE.PlaneGeometry>(null);
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  const strikes = useMemo(() => {
+    const arr = [];
+    for (let i = -3; i <= 3; i++) {
+      arr.push(Math.round(price * (1 + i * 0.025)));
+    }
+    return arr;
+  }, [price]);
+
+  useEffect(() => {
+    if (geoRef.current) {
+      const pos = geoRef.current.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        // Volatility Smile and Term Structure simulation
+        const smile = (x * x) * 0.15;
+        const z = smile + Math.sin(x * 6 + y * 4) * 0.05;
+        pos.setZ(i, z);
+      }
+      pos.needsUpdate = true;
+      geoRef.current.computeVertexNormals();
+    }
+  }, []);
+
+  useFrame(({ clock }) => {
+    if (meshRef.current) {
+      meshRef.current.rotation.z = clock.elapsedTime * 0.1;
+      meshRef.current.rotation.x = -Math.PI / 2.5 + Math.sin(clock.elapsedTime * 0.5) * 0.1;
+    }
+  });
+
+  return (
+    <group position={[0, -0.2, 0.1]}>
+      <Text position={[-1.7, 1.0, 0]} fontSize={0.16} color={color} anchorX="left">
+        ◈ DERIVATIVES_MATRIX // VOLATILITY_SURFACE
+      </Text>
+
+      {/* Volatility Surface 3D Mesh */}
+      <group position={[-0.8, -0.3, -0.2]}>
+        <mesh ref={meshRef}>
+          <planeGeometry ref={geoRef} args={[2.5, 2.5, 32, 32]} />
+          <meshBasicMaterial color={color} wireframe transparent opacity={0.4} blending={THREE.AdditiveBlending} />
+        </mesh>
+        <Text position={[0, 1.4, 0]} fontSize={0.1} color={color} anchorX="center">IMPLIED VOLATILITY (30D)</Text>
+      </group>
+
+      {/* Call / Put Chain Data */}
+      <group position={[1.2, 0, 0]}>
+        <Text position={[0, 0.7, 0]} fontSize={0.12} color="#ffffff" anchorX="center">LIQUIDITY_CHAIN</Text>
+        <Text position={[-0.6, 0.5, 0]} fontSize={0.09} color="#10B981" anchorX="center">CALLS</Text>
+        <Text position={[0, 0.5, 0]} fontSize={0.09} color="#94a3b8" anchorX="center">STRIKE</Text>
+        <Text position={[0.6, 0.5, 0]} fontSize={0.09} color="#EF4444" anchorX="center">PUTS</Text>
+
+        {strikes.map((strike, i) => {
+          const isATM = i === 3;
+          const y = 0.3 - i * 0.16;
+          // Deterministic pseudo-random volume
+          const callVol = isATM ? 15420 : Math.floor((Math.sin(strike) * 0.5 + 0.5) * 5000 + 500);
+          const putVol = isATM ? 12300 : Math.floor((Math.cos(strike) * 0.5 + 0.5) * 5000 + 500);
+          
+          return (
+            <group key={strike} position={[0, y, 0]}>
+              <mesh 
+                position={[-0.6, 0, 0]}
+                onPointerDown={() => onPinchStateChange?.(true)}
+                onPointerUp={() => onPinchStateChange?.(false)}
+                onPointerOut={() => onPinchStateChange?.(false)}
+              >
+                <boxGeometry args={[0.35, 0.12, 0.05]} />
+                <meshBasicMaterial color="#10B981" transparent opacity={0.2} />
+              </mesh>
+              <Text position={[-0.6, 0, 0.03]} fontSize={0.08} color="#10B981" anchorX="center" anchorY="middle">{callVol.toLocaleString()}</Text>
+
+              <Text position={[0, 0, 0]} fontSize={0.1} color={isATM ? "#ffffff" : "#64748b"} anchorX="center" anchorY="middle">
+                ${strike}
+              </Text>
+              
+              <mesh 
+                position={[0.6, 0, 0]}
+                onPointerDown={() => onPinchStateChange?.(true)}
+                onPointerUp={() => onPinchStateChange?.(false)}
+                onPointerOut={() => onPinchStateChange?.(false)}
+              >
+                <boxGeometry args={[0.35, 0.12, 0.05]} />
+                <meshBasicMaterial color="#EF4444" transparent opacity={0.2} />
+              </mesh>
+              <Text position={[0.6, 0, 0.03]} fontSize={0.08} color="#EF4444" anchorX="center" anchorY="middle">{putVol.toLocaleString()}</Text>
+            </group>
+          );
+        })}
+      </group>
+    </group>
+  );
+}
+
+// ── 6. Main Holographic Dashboard Component ────────────────────────────────
+export default function Stock3DVisuals({ data, aiAnalysis, stockInsights, activeTab = "OVERVIEW", onPinchStateChange }: Stock3DVisualsProps) {
   const coreRef = useRef<THREE.Group>(null);
   const mainGroupRef = useRef<THREE.Group>(null);
 
@@ -422,34 +523,128 @@ export default function Stock3DVisuals({ data, aiAnalysis, stockInsights }: Stoc
   const low = data?.low ?? price * 0.98;
   const volume = data?.volume ?? 2500000;
 
-  // Sci-Fi Color Spectrum
+  // ── FinBERT-driven sentiment for the AI Neural Core ───────────────────
+  // Use stockInsights (FinBERT ticker-specific) as primary source,
+  // fall back to generic aiAnalysis only if insights unavailable
+  const finbertScore = stockInsights?.sentiment_score ?? null;
+  const finbertLabel = stockInsights?.sentiment_label ?? null;
+
+  const sentimentDisplay = useMemo(() => {
+    if (finbertLabel && finbertScore !== null) {
+      // FinBERT data available — use it
+      return {
+        score: Math.abs(finbertScore),  // Treat as percentage 0-100
+        label: finbertLabel,
+        color: finbertLabel === "BULLISH" ? "#10B981"
+             : finbertLabel === "BEARISH" ? "#EF4444"
+             : "#06B6D4",
+        colorAlt: finbertLabel === "BULLISH" ? "#34D399"
+                : finbertLabel === "BEARISH" ? "#F87171"
+                : "#22D3EE",
+      };
+    }
+    // Fallback to generic aiAnalysis
+    const score = (aiAnalysis?.score ?? 0.5) * 100;
+    const label = (aiAnalysis?.label ?? "NEUTRAL").toUpperCase();
+    return {
+      score,
+      label,
+      color: label === "POSITIVE" || label === "BULLISH" ? "#10B981"
+           : label === "NEGATIVE" || label === "BEARISH" ? "#EF4444"
+           : "#06B6D4",
+      colorAlt: label === "POSITIVE" || label === "BULLISH" ? "#34D399"
+              : label === "NEGATIVE" || label === "BEARISH" ? "#F87171"
+              : "#22D3EE",
+    };
+  }, [finbertScore, finbertLabel, aiAnalysis]);
+
+  // Sci-Fi Color Spectrum (for non-AI elements: ribbon, header, etc.)
   const holoColor = isPositive ? "#00f0ff" : "#ff0055";
   const holoColorAlt = isPositive ? "#00ff88" : "#ff4400";
-  const score = aiAnalysis?.score ?? 0.85;
-  const sentiment = (aiAnalysis?.label ?? "neutral").toUpperCase();
 
-  // 3D Extruded Ribbon Points (Intraday Trendline)
-  const { ribbonPoints, ribbonMeshPoints } = useMemo(() => {
-    const count = 16;
+  // ── Data-driven 3D Ribbon from real OHLC history ──────────────────────
+  // Uses actual OHLC data to compute points for CatmullRomCurve3 ribbon
+  const { ribbonPoints } = useMemo(() => {
+    const history = data?.history as Array<Record<string, any>> | null | undefined;
     const width = 3.6;
-    const pts: [number, number, number][] = [];
-    const meshPts: THREE.Vector3[] = [];
+
+    if (history && history.length >= 5) {
+      // Real OHLC data available — compute smooth ribbon
+      const pts: THREE.Vector3[] = [];
+
+      // Find price range across all history for Y mapping
+      let histHigh = -Infinity;
+      let histLow = Infinity;
+      for (const h of history) {
+        const hh = h.high ?? h.close ?? 0;
+        const hl = h.low ?? h.close ?? 0;
+        if (hh > histHigh) histHigh = hh;
+        if (hl < histLow) histLow = hl;
+      }
+      const histRange = Math.max(histHigh - histLow, 0.01);
+
+      for (let i = 0; i < history.length; i++) {
+        const progress = i / (history.length - 1);
+        const x = -1.8 + progress * width;
+        const closePrice = history[i].close ?? 0;
+        const y = -0.3 + ((closePrice - histLow) / histRange) * 1.2;
+        // Z-depth: use intraday range (high-low) to create volumetric depth
+        const dayRange = ((history[i].high ?? closePrice) - (history[i].low ?? closePrice));
+        const z = (dayRange / histRange) * 0.4;
+
+        pts.push(new THREE.Vector3(x, y, z));
+      }
+      
+      const curve = new THREE.CatmullRomCurve3(pts, false, "catmullrom", 0.5);
+      const smoothPts = curve.getPoints(64);
+      return { ribbonPoints: smoothPts.map((p) => [p.x, p.y, p.z] as [number, number, number]) };
+    }
+
+    // Fallback: synthesize from open/high/low/close
+    const count = 16;
+    const pts: THREE.Vector3[] = [];
     const range = Math.max(high - low, 0.01);
 
     for (let i = 0; i < count; i++) {
       const progress = i / (count - 1);
       const x = -1.8 + progress * width;
-      // Synthesize realistic financial wave variance
       const wave = Math.sin(progress * Math.PI * 2.5) * 0.4 + Math.cos(progress * Math.PI * 4) * 0.2;
       const val = open + (price - open) * progress + wave * (high - low) * 0.3;
       const y = -0.3 + ((val - low) / range) * 1.2;
       const z = Math.sin(progress * Math.PI) * 0.25;
 
-      pts.push([x, y, z]);
-      meshPts.push(new THREE.Vector3(x, y, z));
+      pts.push(new THREE.Vector3(x, y, z));
     }
-    return { ribbonPoints: pts, ribbonMeshPoints: meshPts };
-  }, [open, price, high, low]);
+    const curve = new THREE.CatmullRomCurve3(pts, false, "catmullrom", 0.5);
+    const smoothPts = curve.getPoints(64);
+    return { ribbonPoints: smoothPts.map((p) => [p.x, p.y, p.z] as [number, number, number]) };
+  }, [data?.history, open, price, high, low]);
+
+  // ── Dispose old Three.js geometries/materials on data change ──────────
+  // Prevents memory leaks when auto-refresh updates the OHLC arrays
+  const dataKey = `${symbol}_${price}_${data?.history?.length ?? 0}`;
+
+  useEffect(() => {
+    // Return a cleanup function to properly dispose materials and geometries on unmount or refresh
+    return () => {
+      if (mainGroupRef.current) {
+        mainGroupRef.current.traverse((child: any) => {
+          if (child.isMesh || child.isLine || child.isPoints) {
+            if (child.geometry) {
+              child.geometry.dispose();
+            }
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach((m: any) => m.dispose());
+              } else {
+                child.material.dispose();
+              }
+            }
+          }
+        });
+      }
+    };
+  }, [dataKey]);
 
   // Dynamic Pulsing Animation for the AI Core
   useFrame(({ clock }) => {
@@ -461,97 +656,10 @@ export default function Stock3DVisuals({ data, aiAnalysis, stockInsights }: Stoc
     }
   });
 
-  // Tab list: add PREDICT only when insights are available
-  const tabs = useMemo(() => {
-    const base: ("OVERVIEW" | "RIBBON" | "AI" | "PREDICT")[] = ["OVERVIEW", "RIBBON", "AI"];
-    if (stockInsights) base.push("PREDICT");
-    return base;
-  }, [stockInsights]);
-
   return (
     <Float speed={2} rotationIntensity={0.08} floatIntensity={0.2}>
       <group ref={mainGroupRef}>
         <HolographicParticles count={100} />
-
-        {/* ── 1. Holographic Floor Grid (Removed for clarity) ── */}
-
-        {/* ── 2. Top Header HUD: Floating Ticker & Volumetric Price ── */}
-        <group position={[0, 1.8, 0.2]}>
-          {/* Holographic Framing Bracket */}
-          <Line
-            points={[
-              [-3.2, 0.4, 0],
-              [-3.4, 0.4, 0],
-              [-3.4, -0.4, 0],
-              [-3.0, -0.4, 0],
-            ]}
-            color={holoColor}
-            lineWidth={2}
-            transparent
-            opacity={0.8}
-          />
-          <Line
-            points={[
-              [3.2, 0.4, 0],
-              [3.4, 0.4, 0],
-              [3.4, -0.4, 0],
-              [3.0, -0.4, 0],
-            ]}
-            color={holoColor}
-            lineWidth={2}
-            transparent
-            opacity={0.8}
-          />
-
-          {/* Symbol */}
-          <Text position={[-3.0, 0.1, 0]} fontSize={0.6} color="#ffffff" anchorX="left" anchorY="middle">
-            {symbol}
-          </Text>
-          <Text position={[-3.0, -0.3, 0]} fontSize={0.16} color={holoColor} anchorX="left" anchorY="middle">
-            {`// QUANT_STREAM: LIVE`}
-          </Text>
-
-          {/* Live Price with Neon Glow */}
-          <Text position={[3.0, 0.1, 0]} fontSize={0.65} color="#ffffff" anchorX="right" anchorY="middle">
-            {`$${price.toFixed(2)}`}
-          </Text>
-          <Text position={[3.0, -0.32, 0]} fontSize={0.2} color={holoColor} anchorX="right" anchorY="middle">
-            {`${isPositive ? "▲ +" : "▼ "}${change.toFixed(2)} (${changePercent.toFixed(2)}%)`}
-          </Text>
-        </group>
-
-        {/* ── 3. Interactive 3D Mode Selector Tabs ── */}
-        <group position={[0, 1.1, 0.2]}>
-          {tabs.map((tab, idx) => {
-            const isSelected = activeTab === tab;
-            const totalTabs = tabs.length;
-            const xPos = (idx - (totalTabs - 1) / 2) * 1.5;
-            return (
-              <group
-                key={tab}
-                position={[xPos, 0, 0]}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveTab(tab);
-                }}
-              >
-                {/* 3D Tab Base */}
-                <mesh position={[0, 0, 0]}>
-                  <boxGeometry args={[1.3, 0.26, 0.05]} />
-                  <meshBasicMaterial
-                    color={isSelected ? (tab === "PREDICT" ? "#10B981" : holoColor) : "#0a192f"}
-                    transparent
-                    opacity={isSelected ? 0.35 : 0.6}
-                    blending={THREE.AdditiveBlending}
-                  />
-                </mesh>
-                <Text position={[0, 0, 0.05]} fontSize={0.11} color={isSelected ? "#ffffff" : "#64748b"}>
-                  {tab}
-                </Text>
-              </group>
-            );
-          })}
-        </group>
 
         {/* ── 4. Main Holographic Content Zone ── */}
 
@@ -607,18 +715,19 @@ export default function Stock3DVisuals({ data, aiAnalysis, stockInsights }: Stoc
         )}
 
         {/* VIEW A & C: Jarvis Holographic AI Neural Core */}
+        {/* Now driven by FinBERT stockInsights data */}
         {(activeTab === "OVERVIEW" || activeTab === "AI") && (
           <group position={[activeTab === "OVERVIEW" ? 1.8 : 0, -0.2, 0.2]}>
-            <Text position={[0, 1.1, 0]} fontSize={0.16} color={holoColor} anchorX="center">
+            <Text position={[0, 1.1, 0]} fontSize={0.16} color={sentimentDisplay.color} anchorX="center">
               ◈ FINBERT_NEURAL_SYNAPSE
             </Text>
 
-            {/* Pulsing Energy Core */}
+            {/* Pulsing Energy Core — color driven by FinBERT sentiment */}
             <group ref={coreRef} position={[0, 0.2, 0]}>
               <mesh>
                 <icosahedronGeometry args={[0.55, 1]} />
                 <meshBasicMaterial
-                  color={holoColor}
+                  color={sentimentDisplay.color}
                   wireframe
                   transparent
                   opacity={0.65}
@@ -636,19 +745,16 @@ export default function Stock3DVisuals({ data, aiAnalysis, stockInsights }: Stoc
               </mesh>
             </group>
 
-            {/* Orbital Gyroscopic HUD Rings */}
+            {/* Orbital Gyroscopic HUD Rings — colored by FinBERT */}
             <group position={[0, 0.2, 0]}>
-              <GyroRing radius={0.85} tube={0.015} speed={0.8} axis="z" color={holoColor} opacity={0.7} />
-              <GyroRing radius={1.05} tube={0.01} speed={-0.6} axis="y" color={holoColorAlt} opacity={0.5} />
+              <GyroRing radius={0.85} tube={0.015} speed={0.8} axis="z" color={sentimentDisplay.color} opacity={0.7} />
+              <GyroRing radius={1.05} tube={0.01} speed={-0.6} axis="y" color={sentimentDisplay.colorAlt} opacity={0.5} />
               <GyroRing radius={1.2} tube={0.008} speed={0.4} axis="x" color="#ffffff" opacity={0.3} />
             </group>
 
-            {/* Score & Sentiment Classification */}
-            <Text position={[0, -0.7, 0]} fontSize={0.32} color="#ffffff" anchorX="center" anchorY="middle">
-              {`${(score * 100).toFixed(0)}%`}
-            </Text>
-            <Text position={[0, -0.98, 0]} fontSize={0.16} color={holoColor} anchorX="center" anchorY="middle">
-              {`[ ${sentiment} ]`}
+            {/* Score & Sentiment Classification — exact format requested */}
+            <Text position={[0, -0.85, 0]} fontSize={0.24} color="#ffffff" anchorX="center" anchorY="middle">
+              {`${sentimentDisplay.score.toFixed(0)}% [${sentimentDisplay.label}]`}
             </Text>
           </group>
         )}
@@ -658,29 +764,13 @@ export default function Stock3DVisuals({ data, aiAnalysis, stockInsights }: Stoc
           <PredictionVisuals insights={stockInsights} />
         )}
 
-        {/* ── 5. Holographic Bottom Status Telemetry ── */}
-        <group position={[0, -1.6, 0.2]}>
-          <Line
-            points={[
-              [-3.0, 0, 0],
-              [3.0, 0, 0],
-            ]}
-            color={holoColor}
-            lineWidth={1}
-            transparent
-            opacity={0.3}
-          />
-          <Text position={[-2.4, -0.2, 0]} fontSize={0.13} color="#64748b" anchorX="center">
-            {`VOL: ${(volume / 1000000).toFixed(2)}M`}
-          </Text>
-          <Text position={[0, -0.2, 0]} fontSize={0.13} color="#64748b" anchorX="center">
-            {`RANGE: $${low.toFixed(1)} - $${high.toFixed(1)}`}
-          </Text>
-          <Text position={[2.4, -0.2, 0]} fontSize={0.13} color={holoColor} anchorX="center">
-            {`AI_CONF: ${(score * 100).toFixed(0)}%`}
-          </Text>
-        </group>
+        {/* VIEW E: OPTIONS — Volatility Surface & Derivatives Matrix */}
+        {activeTab === "OPTIONS" && (
+          <OptionsVisuals price={price} color={holoColor} onPinchStateChange={onPinchStateChange} />
+        )}
+
       </group>
     </Float>
+
   );
 }

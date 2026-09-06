@@ -1,15 +1,14 @@
 /**
  * PriceChart — Professional candlestick + volume chart using TradingView lightweight-charts.
  * 
- * Replaces the previous Recharts area chart with a proper financial
- * candlestick visualization. Designed for compact display inside the AR dashboard.
+ * Renders real OHLC candlestick data when available from the backend.
+ * Falls back to dummy data only when no history is provided.
  * 
  * Features:
  * - Candlestick series with green/red coloring
  * - Volume histogram overlay at the bottom
  * - Transparent background for AR overlay compositing
  * - Auto-resize via ResizeObserver
- * - Falls back to dummy data when no data is provided
  */
 
 "use client";
@@ -37,8 +36,9 @@ export default function PriceChart({ data }: PriceChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
-  // Determine if we should use dummy data
-  const useDummy = !data || data.length === 0;
+  // Check if data has real OHLC fields (from backend history)
+  const hasOHLC = data && data.length > 0 && (data[0] as any).open !== undefined && (data[0] as any).high !== undefined && (data[0] as any).low !== undefined && (data[0] as any).close !== undefined;
+  const useDummy = !data || data.length === 0 || !hasOHLC;
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -86,8 +86,45 @@ export default function PriceChart({ data }: PriceChartProps) {
 
     chartRef.current = chart;
 
-    if (useDummy) {
-      // === CANDLESTICK MODE (dummy OHLC data) ===
+    if (!useDummy) {
+      // === CANDLESTICK MODE (real OHLC data from backend) ===
+      const candleSeries = chart.addSeries(CandlestickSeries, {
+        upColor: "#10b981",
+        downColor: "#ef4444",
+        borderDownColor: "#ef4444",
+        borderUpColor: "#10b981",
+        wickDownColor: "rgba(239, 68, 68, 0.6)",
+        wickUpColor: "rgba(16, 185, 129, 0.6)",
+      });
+      
+      const ohlcData = data.map((d: any) => ({
+        time: d.date || d.time,
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close,
+      }));
+      candleSeries.setData(ohlcData);
+
+      // Volume histogram at the bottom
+      const volumeSeries = chart.addSeries(HistogramSeries, {
+        priceFormat: { type: "volume" },
+        priceScaleId: "volume",
+      });
+      chart.priceScale("volume").applyOptions({
+        scaleMargins: { top: 0.8, bottom: 0 },
+      });
+      
+      const volumeData = data.map((d: any) => ({
+        time: d.date || d.time,
+        value: d.volume || 0,
+        color: (d.close ?? 0) >= (d.open ?? 0)
+          ? "rgba(16, 185, 129, 0.4)"
+          : "rgba(239, 68, 68, 0.35)",
+      }));
+      volumeSeries.setData(volumeData);
+    } else {
+      // === CANDLESTICK MODE (dummy OHLC data fallback) ===
       const candleSeries = chart.addSeries(CandlestickSeries, {
         upColor: "#10b981",
         downColor: "#ef4444",
@@ -107,30 +144,6 @@ export default function PriceChart({ data }: PriceChartProps) {
         scaleMargins: { top: 0.8, bottom: 0 },
       });
       volumeSeries.setData(DUMMY_VOLUME_DATA);
-    } else {
-      // === AREA MODE (live PricePoint[] data from backend) ===
-      const firstPrice = data[0].close;
-      const lastPrice = data[data.length - 1].close;
-      const isPositive = lastPrice >= firstPrice;
-      const lineColor = isPositive ? "#10b981" : "#ef4444";
-      const topColor = isPositive
-        ? "rgba(16, 185, 129, 0.3)"
-        : "rgba(239, 68, 68, 0.25)";
-
-      const areaSeries = chart.addSeries(AreaSeries, {
-        lineColor,
-        topColor,
-        bottomColor: "transparent",
-        lineWidth: 2,
-        crosshairMarkerBackgroundColor: "#0a0e1a",
-        crosshairMarkerBorderColor: lineColor,
-        crosshairMarkerBorderWidth: 2,
-        crosshairMarkerRadius: 4,
-      });
-
-      areaSeries.setData(
-        data.map((p) => ({ time: p.date, value: p.close }))
-      );
     }
 
     // Fit all data into view
@@ -155,10 +168,15 @@ export default function PriceChart({ data }: PriceChartProps) {
     };
   }, [data, useDummy]);
 
+  // Determine chart title based on data source
+  const chartTitle = useDummy
+    ? "1-Month Price Trend (Demo)"
+    : "1-Month Price Trend";
+
   return (
     <div className="chart-container">
       <div className="chart-title">
-        {useDummy ? "1-Month Price Trend (Demo)" : "1-Month Price Trend"}
+        {chartTitle}
       </div>
       <div
         ref={chartContainerRef}

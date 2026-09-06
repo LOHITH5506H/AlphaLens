@@ -20,6 +20,8 @@ interface ARSceneProps {
   aiAnalysis?: AIAnalysis | null;
   aiError?: string | null;
   stockInsights?: StockInsights | null;
+  activeTab: "OVERVIEW" | "RIBBON" | "AI" | "PREDICT" | "OPTIONS";
+  onPinchStateChange?: (isPinching: boolean) => void;
   onTargetFound: (targetIndex: number, ticker: string, isFallback?: boolean) => void;
   onTargetLost: (targetIndex: number) => void;
   isManualMode?: boolean;
@@ -30,7 +32,7 @@ interface ARSceneProps {
 // ARTracker — Bridges MindAR computer vision ↔ R3F scene graph
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis, stockInsights }: any) => {
+const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis, stockInsights, activeTab, onPinchStateChange }: any) => {
   const { camera } = useThree();
   const groupRef = useRef<THREE.Group>(null);
 
@@ -59,7 +61,7 @@ const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis, stockInsigh
   return (
     <group ref={groupRef} matrixAutoUpdate={false} visible={true}>
       <group rotation={[Math.PI / 2, 0, 0]} scale={[1.2, 1.2, 1.2]}>
-        <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} />
+        <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} onPinchStateChange={onPinchStateChange} />
       </group>
     </group>
   );
@@ -115,6 +117,8 @@ export default function ARScene({
   aiAnalysis,
   aiError,
   stockInsights,
+  activeTab,
+  onPinchStateChange,
   onTargetFound,
   onTargetLost,
   isManualMode,
@@ -316,7 +320,7 @@ export default function ARScene({
                   dampingFactor={0.05}
                 />
                 <Center>
-                  <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} />
+                  <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} onPinchStateChange={onPinchStateChange} />
                 </Center>
               </>
             ) : (
@@ -326,6 +330,8 @@ export default function ARScene({
                 stockData={stockData}
                 aiAnalysis={aiAnalysis}
                 stockInsights={stockInsights}
+                activeTab={activeTab}
+                onPinchStateChange={onPinchStateChange}
               />
             )}
 
