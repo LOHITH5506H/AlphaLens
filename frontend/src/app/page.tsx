@@ -9,6 +9,8 @@ import { useStockData } from "@/hooks/useStockData";
 import { useAIAnalysis } from "@/hooks/useAIAnalysis";
 import { useStockInsights } from "@/hooks/useStockInsights";
 import { useSpeech } from "@/hooks/useSpeech";
+import { useHandTracking } from "@/hooks/useHandTracking";
+import HandCursor from "@/components/HandCursor";
 import { sendVoiceCommand, searchTicker } from "@/lib/api";
 
 // Dynamically import ARScene with SSR disabled (needs browser APIs)
@@ -62,11 +64,13 @@ export default function HomePage() {
   
   const [activeTab, setActiveTab] = useState<"Overview" | "Trader" | "Investor">("Overview");
   const [isPinching, setIsPinching] = useState(false);
+  const [isHandTrackingEnabled, setIsHandTrackingEnabled] = useState(false);
 
   const stockData = useStockData();
   const aiAnalysis = useAIAnalysis();
   const stockInsights = useStockInsights();
   const speech = useSpeech();
+  const gestureState = useHandTracking(isHandTrackingEnabled);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -166,6 +170,150 @@ export default function HomePage() {
       });
   }, [speech.transcript, speech.isListening, aiAnalysis]);
 
+  // Handle Hand Gestures
+  const tabs: ("Overview" | "Trader" | "Investor")[] = ["Overview", "Trader", "Investor"];
+  
+  useEffect(() => {
+    if (gestureState.swipeDirection === "left") {
+      setActiveTab((prev) => {
+        const idx = tabs.indexOf(prev);
+        return tabs[Math.min(idx + 1, tabs.length - 1)];
+      });
+    } else if (gestureState.swipeDirection === "right") {
+      setActiveTab((prev) => {
+        const idx = tabs.indexOf(prev);
+        return tabs[Math.max(idx - 1, 0)];
+      });
+    }
+  }, [gestureState.swipeDirection]);
+
+  const prevPinchRef = useRef(false);
+  const lastElementRef = useRef<Element | null>(null);
+  const lastYRef = useRef(0);
+
+  // Patch Pointer Capture to prevent React/R3F crashes when using fake pointer IDs
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const originalSet = Element.prototype.setPointerCapture;
+    const originalRelease = Element.prototype.releasePointerCapture;
+    
+    Element.prototype.setPointerCapture = function(pointerId) {
+      try { originalSet.call(this, pointerId); } catch(e) {}
+    };
+    Element.prototype.releasePointerCapture = function(pointerId) {
+      try { originalRelease.call(this, pointerId); } catch(e) {}
+    };
+
+    return () => {
+      Element.prototype.setPointerCapture = originalSet;
+      Element.prototype.releasePointerCapture = originalRelease;
+    };
+  }, []);
+
+  useEffect(() => {
+    // Sync pinch state for AR 3D rotation if needed
+    if (gestureState.isVisible) {
+      setIsPinching(gestureState.isPinching);
+    }
+
+    if (!gestureState.isVisible) {
+      prevPinchRef.current = false;
+      return;
+    }
+
+    const clientX = gestureState.x * window.innerWidth;
+    const clientY = gestureState.y * window.innerHeight;
+    
+    // Find the element exactly under the virtual cursor
+    const element = document.elementFromPoint(clientX, clientY);
+
+    // Zooming logic using Middle Pinch
+    if (gestureState.isMiddlePinching) {
+      const deltaY = clientY - lastYRef.current;
+      // Trigger scroll/zoom if moved enough
+      if (Math.abs(deltaY) > 2) {
+        if (element) {
+          const wheelEvent = new WheelEvent("wheel", {
+            bubbles: true,
+            cancelable: true,
+            clientX,
+            clientY,
+            deltaY: deltaY * 3, // Amplify movement for zoom
+          });
+          element.dispatchEvent(wheelEvent);
+        }
+        lastYRef.current = clientY;
+      }
+    } else {
+      lastYRef.current = clientY;
+    }
+
+    const isJustPinched = gestureState.isPinching && !prevPinchRef.current;
+    const isJustReleased = !gestureState.isPinching && prevPinchRef.current;
+    
+    // Dispatch standard pointer events so React/R3F think it's a mouse
+    if (element && !gestureState.isMiddlePinching) {
+      // 1. Move Event (for dragging OrbitControls or hover effects)
+      const moveEvent = new PointerEvent("pointermove", {
+        bubbles: true,
+        cancelable: true,
+        clientX,
+        clientY,
+        pointerId: 99, // use a unique pointer ID
+        pointerType: "mouse",
+        buttons: gestureState.isPinching ? 1 : 0
+      });
+      element.dispatchEvent(moveEvent);
+
+      // 2. Down Event (Pinch Start)
+      if (isJustPinched) {
+        const downEvent = new PointerEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          pointerId: 99,
+          pointerType: "mouse",
+          buttons: 1
+        });
+        element.dispatchEvent(downEvent);
+        lastElementRef.current = element;
+      }
+
+      // 3. Up Event & Click (Pinch Release)
+      if (isJustReleased) {
+        const target = lastElementRef.current || element;
+        
+        const upEvent = new PointerEvent("pointerup", {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          pointerId: 99,
+          pointerType: "mouse",
+          buttons: 0
+        });
+        target.dispatchEvent(upEvent);
+        
+        // Also trigger native click for standard HTML buttons
+        if (target instanceof HTMLElement) {
+          target.click();
+        }
+        
+        lastElementRef.current = null;
+      }
+    } else if (isJustReleased && lastElementRef.current) {
+        // Fire UP event even if released outside the window/element
+        const upEvent = new PointerEvent("pointerup", {
+          bubbles: true, cancelable: true, clientX, clientY, pointerId: 99, pointerType: "mouse", buttons: 0
+        });
+        lastElementRef.current.dispatchEvent(upEvent);
+        lastElementRef.current = null;
+    }
+
+    prevPinchRef.current = gestureState.isPinching;
+  }, [gestureState.isPinching, gestureState.isMiddlePinching, gestureState.isVisible, gestureState.x, gestureState.y]);
+
   // Derived data for HUD
   const price = stockData.data?.price ?? 0;
   const change = stockData.data?.change ?? 0;
@@ -251,13 +399,48 @@ export default function HomePage() {
       )}
 
       {mounted && (
-        <VoiceButton
-          isListening={speech.isListening}
-          isSupported={speech.isSupported}
-          transcript={speech.transcript}
-          onStart={speech.startListening}
-          onStop={speech.stopListening}
-        />
+        <>
+          <VoiceButton
+            isListening={speech.isListening}
+            isSupported={speech.isSupported}
+            transcript={speech.transcript}
+            onStart={speech.startListening}
+            onStop={speech.stopListening}
+          />
+          {/* Hand Tracking Toggle */}
+          <button
+            onClick={() => setIsHandTrackingEnabled(!isHandTrackingEnabled)}
+            style={{
+              position: "fixed",
+              bottom: "24px",
+              left: "24px",
+              zIndex: 110,
+              padding: "12px 16px",
+              borderRadius: "24px",
+              background: isHandTrackingEnabled ? "rgba(56, 189, 248, 0.4)" : "rgba(15, 23, 42, 0.6)",
+              backdropFilter: "blur(8px)",
+              border: `1px solid ${isHandTrackingEnabled ? "rgba(56, 189, 248, 0.6)" : "rgba(148, 163, 184, 0.15)"}`,
+              color: "#f1f5f9",
+              fontSize: "14px",
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              boxShadow: isHandTrackingEnabled ? "0 0 15px rgba(56,189,248,0.4)" : "0 4px 12px rgba(0,0,0,0.3)",
+            }}
+          >
+            <span style={{ fontSize: "18px" }}>{isHandTrackingEnabled ? "✋" : "🤚"}</span>
+            <span>{isHandTrackingEnabled ? "Gestures On" : "Gestures Off"}</span>
+          </button>
+          
+          <HandCursor 
+            x={gestureState.x} 
+            y={gestureState.y} 
+            isPinching={gestureState.isPinching} 
+            isVisible={gestureState.isVisible} 
+          />
+        </>
       )}
     </main>
   );
