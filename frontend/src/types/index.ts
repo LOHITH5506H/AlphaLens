@@ -8,6 +8,46 @@ export interface PricePoint {
   close: number;
 }
 
+export interface CandlePoint {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  vwap?: number | null;
+}
+
+export interface TechnicalIndicators {
+  rsi_14?: number | null;
+  macd?: number | null;
+  macd_signal?: number | null;
+  macd_hist?: number | null;
+  vwap?: number | null;
+}
+
+export interface FinancialBreakdown {
+  quarter: string;
+  revenue?: number | null;
+  gross_profit?: number | null;
+  operating_income?: number | null;
+  net_income?: number | null;
+  operating_margin?: number | null;
+}
+
+export interface ValuationMultiplePoint {
+  date: string;
+  price: number;
+  trailing_pe?: number | null;
+  forward_pe?: number | null;
+  ev_to_ebitda?: number | null;
+}
+
+export interface VolumeProfileBin {
+  price_level: number;
+  volume: number;
+}
+
 /**
  * Matches the backend StockData Pydantic schema (models/schemas.py).
  * The backend sends: symbol, price, change, changePercent, high, low, open, etc.
@@ -25,7 +65,13 @@ export interface StockData {
   volume?: number | null;
   marketCap?: number | null;
   peRatio?: number | null;
+  currency: string;
   history?: Array<Record<string, any>> | null;
+  candlesticks?: CandlePoint[] | null;
+  technicals?: TechnicalIndicators | null;
+  financials?: FinancialBreakdown[] | null;
+  valuation_history?: ValuationMultiplePoint[] | null;
+  volume_profile?: VolumeProfileBin[] | null;
   sentiment?: any | null;
   analysis?: any | null;
 }

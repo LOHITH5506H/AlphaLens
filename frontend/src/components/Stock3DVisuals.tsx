@@ -10,7 +10,7 @@ interface Stock3DVisualsProps {
   data: StockData;
   aiAnalysis?: AIAnalysis | null;
   stockInsights?: StockInsights | null;
-  activeTab?: "OVERVIEW" | "RIBBON" | "AI" | "PREDICT" | "OPTIONS";
+  activeTab?: "Overview" | "Trader" | "Investor";
   onPinchStateChange?: (isPinching: boolean) => void;
 }
 
@@ -507,7 +507,7 @@ function OptionsVisuals({ price, color, onPinchStateChange }: { price: number, c
 }
 
 // ── 6. Main Holographic Dashboard Component ────────────────────────────────
-export default function Stock3DVisuals({ data, aiAnalysis, stockInsights, activeTab = "OVERVIEW", onPinchStateChange }: Stock3DVisualsProps) {
+export default function Stock3DVisuals({ data, aiAnalysis, stockInsights, activeTab = "Overview", onPinchStateChange }: Stock3DVisualsProps) {
   const coreRef = useRef<THREE.Group>(null);
   const mainGroupRef = useRef<THREE.Group>(null);
 
@@ -663,17 +663,14 @@ export default function Stock3DVisuals({ data, aiAnalysis, stockInsights, active
 
         {/* ── 4. Main Holographic Content Zone ── */}
 
-        {/* VIEW A & B: 3D Volumetric Sparkline Ribbon */}
-        {(activeTab === "OVERVIEW" || activeTab === "RIBBON") && (
-          <group position={[activeTab === "OVERVIEW" ? -1.6 : 0, -0.2, 0.1]}>
+        {/* 1. OVERVIEW: Intraday Volumetric Trajectory (CatmullRom Ribbon) */}
+        <group visible={activeTab === "Overview" || activeTab === undefined}>
+          <group position={[0, -0.2, 0.1]}>
             <Text position={[-1.7, 1.0, 0]} fontSize={0.16} color={holoColor} anchorX="left">
               ◈ INTRADAY_VOLUMETRIC_TRAJECTORY
             </Text>
 
-            {/* Glowing 3D Line */}
             <Line points={ribbonPoints} color={holoColor} lineWidth={4} transparent opacity={1} />
-
-            {/* Secondary Neon Depth Echo Line */}
             <Line
               points={ribbonPoints.map(([x, y, z]) => [x, y - 0.1, z - 0.15])}
               color={holoColorAlt}
@@ -682,7 +679,6 @@ export default function Stock3DVisuals({ data, aiAnalysis, stockInsights, active
               opacity={0.4}
             />
 
-            {/* 3D Vertical Data Pillars (Candlestick Extrusions) */}
             {[
               { label: "OPEN", val: open, x: -1.4 },
               { label: "HIGH", val: high, x: -0.5 },
@@ -712,65 +708,41 @@ export default function Stock3DVisuals({ data, aiAnalysis, stockInsights, active
               );
             })}
           </group>
-        )}
+        </group>
 
-        {/* VIEW A & C: Jarvis Holographic AI Neural Core */}
-        {/* Now driven by FinBERT stockInsights data */}
-        {(activeTab === "OVERVIEW" || activeTab === "AI") && (
-          <group position={[activeTab === "OVERVIEW" ? 1.8 : 0, -0.2, 0.2]}>
+        {/* 2. TRADER: Options Volatility Surface */}
+        <group visible={activeTab === "Trader"}>
+          <OptionsVisuals price={price} color={holoColor} onPinchStateChange={onPinchStateChange} />
+        </group>
+
+        {/* 3. INVESTOR: AI Orb */}
+        <group visible={activeTab === "Investor"}>
+          <group position={[0, -0.2, 0.2]}>
             <Text position={[0, 1.1, 0]} fontSize={0.16} color={sentimentDisplay.color} anchorX="center">
-              ◈ FINBERT_NEURAL_SYNAPSE
+              FINBERT_NEURAL_SYNAPSE
             </Text>
-
-            {/* Pulsing Energy Core — color driven by FinBERT sentiment */}
             <group ref={coreRef} position={[0, 0.2, 0]}>
               <mesh>
                 <icosahedronGeometry args={[0.55, 1]} />
-                <meshBasicMaterial
-                  color={sentimentDisplay.color}
-                  wireframe
-                  transparent
-                  opacity={0.65}
-                  blending={THREE.AdditiveBlending}
-                />
+                <meshBasicMaterial color={sentimentDisplay.color} wireframe transparent opacity={0.65} blending={THREE.AdditiveBlending} />
               </mesh>
               <mesh>
                 <sphereGeometry args={[0.3, 16, 16]} />
-                <meshBasicMaterial
-                  color="#ffffff"
-                  transparent
-                  opacity={0.4}
-                  blending={THREE.AdditiveBlending}
-                />
+                <meshBasicMaterial color="#ffffff" transparent opacity={0.4} blending={THREE.AdditiveBlending} />
               </mesh>
             </group>
-
-            {/* Orbital Gyroscopic HUD Rings — colored by FinBERT */}
             <group position={[0, 0.2, 0]}>
               <GyroRing radius={0.85} tube={0.015} speed={0.8} axis="z" color={sentimentDisplay.color} opacity={0.7} />
               <GyroRing radius={1.05} tube={0.01} speed={-0.6} axis="y" color={sentimentDisplay.colorAlt} opacity={0.5} />
               <GyroRing radius={1.2} tube={0.008} speed={0.4} axis="x" color="#ffffff" opacity={0.3} />
             </group>
-
-            {/* Score & Sentiment Classification — exact format requested */}
             <Text position={[0, -0.85, 0]} fontSize={0.24} color="#ffffff" anchorX="center" anchorY="middle">
               {`${sentimentDisplay.score.toFixed(0)}% [${sentimentDisplay.label}]`}
             </Text>
           </group>
-        )}
-
-        {/* VIEW D: PREDICT — LSTM Trajectory + Volatility Corridor */}
-        {activeTab === "PREDICT" && stockInsights && (
-          <PredictionVisuals insights={stockInsights} />
-        )}
-
-        {/* VIEW E: OPTIONS — Volatility Surface & Derivatives Matrix */}
-        {activeTab === "OPTIONS" && (
-          <OptionsVisuals price={price} color={holoColor} onPinchStateChange={onPinchStateChange} />
-        )}
+        </group>
 
       </group>
     </Float>
-
   );
 }

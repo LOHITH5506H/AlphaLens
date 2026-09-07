@@ -30,24 +30,29 @@ export function getMarkerByIndex(index: number): MarkerMapping | undefined {
   return MARKER_MAPPINGS.find((m) => m.targetIndex === index);
 }
 
+const formatCurrency = (val: number, currency: string = "USD", compact: boolean = false) => {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency,
+    notation: compact ? "compact" : "standard",
+    maximumFractionDigits: 2,
+  }).format(val);
+};
+
 /**
  * Format large numbers for display (e.g., market cap).
- * 1,234,567,890 → "$1.23B"
  */
-export function formatLargeNumber(num: number | null): string {
+export function formatLargeNumber(num: number | null, currency: string = "USD"): string {
   if (num === null || num === undefined) return "N/A";
-  if (num >= 1e12) return `$${(num / 1e12).toFixed(2)}T`;
-  if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`;
-  if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`;
-  return `$${num.toLocaleString()}`;
+  return formatCurrency(num, currency, true);
 }
 
 /**
  * Format a price value.
  */
-export function formatPrice(price: number | null): string {
+export function formatPrice(price: number | null, currency: string = "USD"): string {
   if (price === null || price === undefined) return "N/A";
-  return `$${price.toFixed(2)}`;
+  return formatCurrency(price, currency, false);
 }
 
 /**

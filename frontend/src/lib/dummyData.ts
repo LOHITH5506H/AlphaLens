@@ -111,6 +111,7 @@ export const DUMMY_PRICE_HISTORY = DUMMY_OHLC_DATA.map((d) => ({
 export const DUMMY_STOCK_DATA: StockData = {
   symbol: "AAPL",
   name: "Apple Inc.",
+  currency: "USD",
   price: 194.90,
   change: 2.10,
   changePercent: 1.09,

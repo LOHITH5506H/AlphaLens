@@ -16,15 +16,15 @@ import Stock3DVisuals from "./Stock3DVisuals";
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface ARSceneProps {
-  stockData: StockData | null;
+  stockData?: StockData | null;
   aiAnalysis?: AIAnalysis | null;
   aiError?: string | null;
   stockInsights?: StockInsights | null;
-  activeTab: "OVERVIEW" | "RIBBON" | "AI" | "PREDICT" | "OPTIONS";
+  isManualMode?: boolean;
+  activeTab?: "Overview" | "Trader" | "Investor";
   onPinchStateChange?: (isPinching: boolean) => void;
   onTargetFound: (targetIndex: number, ticker: string, isFallback?: boolean) => void;
   onTargetLost: (targetIndex: number) => void;
-  isManualMode?: boolean;
   onClose?: () => void;
 }
 

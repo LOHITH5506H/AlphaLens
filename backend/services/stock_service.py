@@ -284,6 +284,46 @@ def _get_next_trading_dates(n: int = 5) -> list[str]:
     return dates
 
 
+def _compute_macd(close_series: pd.Series) -> pd.DataFrame:
+    ema_12 = close_series.ewm(span=12, adjust=False).mean()
+    ema_26 = close_series.ewm(span=26, adjust=False).mean()
+    macd_line = ema_12 - ema_26
+    signal_line = macd_line.ewm(span=9, adjust=False).mean()
+    macd_hist = macd_line - signal_line
+    return pd.DataFrame({"macd": macd_line, "signal": signal_line, "hist": macd_hist})
+
+
+def _compute_vwap(df: pd.DataFrame) -> pd.Series:
+    typical_price = (df["High"] + df["Low"] + df["Close"]) / 3
+    cum_vol = df["Volume"].cumsum()
+    cum_vol_price = (typical_price * df["Volume"]).cumsum()
+    return cum_vol_price / cum_vol.replace(0, 1e-10)
+
+
+def _compute_volume_profile(df: pd.DataFrame, bins: int = 12) -> list[dict]:
+    if df.empty:
+        return []
+    min_price = df["Low"].min()
+    max_price = df["High"].max()
+    if min_price == max_price:
+        return []
+    
+    bin_size = (max_price - min_price) / bins
+    profile = []
+    
+    typical = (df["High"] + df["Low"] + df["Close"]) / 3
+    for i in range(bins):
+        low_bound = min_price + i * bin_size
+        high_bound = min_price + (i + 1) * bin_size
+        mask = (typical >= low_bound) & (typical <= high_bound)
+        vol = float(df.loc[mask, "Volume"].sum())
+        profile.append({
+            "price_level": round(low_bound + bin_size / 2, 2),
+            "volume": vol
+        })
+    return profile
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Public API: get_stock_data (used by existing /api/stock/{ticker} endpoint)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -291,13 +331,15 @@ def _get_next_trading_dates(n: int = 5) -> list[str]:
 def get_stock_data(symbol: str) -> dict:
     """
     Fetch live stock data for a given symbol via yfinance.
-    Returns a dictionary matching the StockData schema, including
-    OHLC history for the PriceChart candlestick view.
+    Returns a dictionary matching the StockData schema.
     """
     symbol = symbol.upper()
+    ticker_obj = yf.Ticker(symbol)
 
     try:
         info = _get_ticker_info(symbol)
+
+        currency = info.get("currency", "USD")
 
         # Current price — try multiple fields for resilience
         price = (
@@ -310,23 +352,96 @@ def get_stock_data(symbol: str) -> dict:
         change = round(price - prev_close, 2) if price and prev_close else 0.0
         change_pct = round((change / prev_close) * 100, 2) if prev_close else 0.0
 
-        # Fetch 1-month OHLCV history for the PriceChart candlestick view
-        history_list = []
+        # Fetch 3-month OHLCV history
+        candlesticks = []
+        technicals = None
+        volume_profile = []
+        valuation_history = []
+        
         try:
-            hist = _get_historical_data(symbol, period="1mo", interval="1d")
+            hist = _get_historical_data(symbol, period="3mo", interval="1d")
             if not hist.empty:
+                vwap_series = _compute_vwap(hist)
+                # Un-normalize the RSI from the AI feature engineering function back to 0-100 for display
+                rsi_series = (_compute_rsi(hist["Close"], period=14) * 50.0) + 50.0
+                macd_df = _compute_macd(hist["Close"])
+                
                 for idx, row in hist.iterrows():
                     date_str = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
-                    history_list.append({
+                    candlesticks.append({
                         "date": date_str,
                         "open": round(float(row["Open"]), 2),
                         "high": round(float(row["High"]), 2),
                         "low": round(float(row["Low"]), 2),
                         "close": round(float(row["Close"]), 2),
                         "volume": int(row["Volume"]),
+                        "vwap": round(float(vwap_series.loc[idx]), 2) if not pd.isna(vwap_series.loc[idx]) else None
                     })
+                
+                # Latest technicals
+                last_idx = hist.index[-1]
+                technicals = {
+                    "rsi_14": round(float(rsi_series.loc[last_idx]), 2) if not pd.isna(rsi_series.loc[last_idx]) else None,
+                    "macd": round(float(macd_df.loc[last_idx, "macd"]), 2) if not pd.isna(macd_df.loc[last_idx, "macd"]) else None,
+                    "macd_signal": round(float(macd_df.loc[last_idx, "signal"]), 2) if not pd.isna(macd_df.loc[last_idx, "signal"]) else None,
+                    "macd_hist": round(float(macd_df.loc[last_idx, "hist"]), 2) if not pd.isna(macd_df.loc[last_idx, "hist"]) else None,
+                    "vwap": round(float(vwap_series.loc[last_idx]), 2) if not pd.isna(vwap_series.loc[last_idx]) else None,
+                }
+                
+                volume_profile = _compute_volume_profile(hist, bins=12)
+                
+                # Valuation History (Using trailing EPS if available to build historical multiples)
+                trailing_pe = info.get("trailingPE")
+                if trailing_pe and price > 0:
+                    eps = price / trailing_pe
+                    if eps > 0:
+                        for idx, row in hist.iterrows():
+                            date_str = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
+                            valuation_history.append({
+                                "date": date_str,
+                                "price": round(float(row["Close"]), 2),
+                                "trailing_pe": round(float(row["Close"]) / eps, 2),
+                                "forward_pe": None,
+                                "ev_to_ebitda": None
+                            })
         except Exception as e:
-            logger.warning("Failed to fetch OHLC history for %s: %s", symbol, e)
+            logger.warning("Failed to fetch 3mo OHLC history for %s: %s", symbol, e)
+
+        # Fetch Financials
+        financials = []
+        try:
+            q_fin = ticker_obj.quarterly_income_stmt
+            if q_fin is not None and not q_fin.empty:
+                for date_col in q_fin.columns[:4]:
+                    col_data = q_fin[date_col]
+                    date_str = date_col.strftime("%Y-%m-%d") if hasattr(date_col, "strftime") else str(date_col)[:10]
+                    
+                    def get_metric(aliases):
+                        for a in aliases:
+                            if a in col_data:
+                                val = col_data[a]
+                                if not pd.isna(val):
+                                    return float(val)
+                        return None
+                    
+                    rev = get_metric(["Total Revenue", "TotalRevenue", "Operating Revenue", "Revenue"])
+                    gp = get_metric(["Gross Profit", "GrossProfit"])
+                    oi = get_metric(["Operating Income", "OperatingIncome", "EBIT"])
+                    ni = get_metric(["Net Income", "NetIncome", "Net Income Common Stockholders"])
+                    
+                    om = (oi / rev) if (oi is not None and rev is not None and rev > 0) else None
+                    
+                    financials.append({
+                        "quarter": date_str,
+                        "revenue": rev,
+                        "gross_profit": gp,
+                        "operating_income": oi,
+                        "net_income": ni,
+                        "operating_margin": om
+                    })
+                financials.reverse() # Oldest to newest
+        except Exception as e:
+            logger.warning("Failed to fetch financials for %s: %s", symbol, e)
 
         return {
             "symbol": symbol,
@@ -341,7 +456,13 @@ def get_stock_data(symbol: str) -> dict:
             "volume": info.get("volume") or info.get("regularMarketVolume"),
             "marketCap": info.get("marketCap"),
             "peRatio": info.get("trailingPE"),
-            "history": history_list if history_list else None,
+            "currency": currency,
+            "history": candlesticks if candlesticks else None, 
+            "candlesticks": candlesticks if candlesticks else None,
+            "technicals": technicals,
+            "financials": financials if financials else None,
+            "valuation_history": valuation_history if valuation_history else None,
+            "volume_profile": volume_profile if volume_profile else None,
         }
 
     except Exception as e:

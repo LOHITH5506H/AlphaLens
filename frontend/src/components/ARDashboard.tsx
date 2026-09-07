@@ -8,13 +8,16 @@
 
 "use client";
 
+import React, { useState } from "react";
 import type { StockData, AIAnalysis } from "@/types";
 import { formatPrice } from "@/lib/constants";
-import { DUMMY_STOCK_DATA } from "@/lib/dummyData";
 import StockStats from "./StockStats";
 import PriceChart from "./PriceChart";
 import AIBanner from "./AIBanner";
 import LoadingOverlay from "./LoadingOverlay";
+import TraderChart from "./TraderChart";
+import FinancialsChart from "./FinancialsChart";
+import ValuationBandsChart from "./ValuationBandsChart";
 
 interface ARDashboardProps {
   stockData: StockData | null;
@@ -24,6 +27,8 @@ interface ARDashboardProps {
   error: string | null;
   highlightedStats?: string[];
   voiceMessage?: string | null;
+  activeTab: "Overview" | "Trader" | "Investor";
+  onTabChange: (tab: "Overview" | "Trader" | "Investor") => void;
 }
 
 export default function ARDashboard({
@@ -34,13 +39,14 @@ export default function ARDashboard({
   error,
   highlightedStats,
   voiceMessage,
+  activeTab,
+  onTabChange,
 }: ARDashboardProps) {
-  // Loading state
+
   if (stockLoading && !stockData) {
     return <LoadingOverlay />;
   }
 
-  // Error state
   if (error && !stockData) {
     return (
       <div className="ar-dashboard animate-fade-in-up">
@@ -59,68 +65,62 @@ export default function ARDashboard({
 
   if (!stockData) return null;
 
-  // Detect demo mode (no live data, will use dummy fallback)
   const isDemoMode = !stockData.price;
-
-  // Use change values directly from the backend
   const priceChange = stockData.change ?? null;
   const priceChangePercent = stockData.changePercent ?? null;
+  const currency = stockData.currency || "USD";
 
   return (
-    <div className="ar-dashboard animate-fade-in-up">
-      {/* Demo mode indicator */}
-      {isDemoMode && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "6px",
-            padding: "6px 14px",
-            marginBottom: "12px",
-            borderRadius: "8px",
-            background: "rgba(245, 158, 11, 0.08)",
-            border: "1px solid rgba(245, 158, 11, 0.2)",
-          }}
-        >
-          <span style={{ fontSize: "10px" }}>⚡</span>
-          <span
-            style={{
-              fontSize: "9px",
-              fontWeight: 700,
-              letterSpacing: "0.12em",
-              color: "#f59e0b",
-              textTransform: "uppercase" as const,
-            }}
+    <div className="ar-dashboard animate-fade-in-up flex flex-col pointer-events-auto" style={{ maxHeight: '85vh', overflowY: 'auto' }}>
+      
+      {/* Tab Toggle Header */}
+      <div className="flex bg-[#0f172a] bg-opacity-80 p-1 rounded-xl mb-3 border border-slate-700/50 sticky top-0 z-50 backdrop-blur-md">
+        {(["Overview", "Trader", "Investor"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => onTabChange(tab)}
+            className={`flex-1 text-xs font-bold py-2 rounded-lg transition-all duration-300 ${
+              activeTab === tab
+                ? "bg-blue-600/20 text-blue-400 border border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.15)]"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent"
+            }`}
           >
+            {tab === "Overview" && "📊 "}
+            {tab === "Trader" && "📈 "}
+            {tab === "Investor" && "🏢 "}
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {isDemoMode && (
+        <div className="flex items-center justify-center gap-1.5 px-3 py-1.5 mb-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <span className="text-[10px]">⚡</span>
+          <span className="text-[9px] font-bold tracking-widest text-amber-500 uppercase">
             Demo Mode — Dummy Data
           </span>
         </div>
       )}
 
-      {/* Header */}
+      {/* Header (Always Visible) */}
       <div className="ar-dashboard-header">
         <div className="logo">
-          {stockData.symbol === "AAPL"
-            ? "🍎"
-            : stockData.symbol === "TSLA"
-            ? "⚡"
-            : "🏭"}
+          {stockData.symbol === "AAPL" ? "🍎" : stockData.symbol === "TSLA" ? "⚡" : "🏭"}
         </div>
-        <div style={{ flex: 1 }}>
+        <div className="flex-1">
           <div className="company-name">{stockData.name}</div>
           <span className="ticker-badge">{stockData.symbol}</span>
         </div>
       </div>
 
-      {/* Live Price */}
-      <div className="price-row">
-        <span className="price">{formatPrice(stockData.price)}</span>
+      {/* Live Price (Always Visible) */}
+      <div className="price-row mb-3">
+        <span className="price">{formatPrice(stockData.price, currency)}</span>
         {priceChange !== null && (
           <span className={`change ${priceChange >= 0 ? "up" : "down"}`}>
-            {priceChange >= 0 ? "▲" : "▼"} {formatPrice(Math.abs(priceChange))}
+            {priceChange >= 0 ? "▲" : "▼"} {formatPrice(Math.abs(priceChange), currency)}
             {priceChangePercent !== null && (
-              <span style={{ marginLeft: "4px" }}>
+              <span className="ml-1">
                 ({priceChangePercent >= 0 ? "+" : ""}
                 {priceChangePercent.toFixed(2)}%)
               </span>
@@ -129,44 +129,58 @@ export default function ARDashboard({
         )}
       </div>
 
-      {/* Voice response message */}
       {voiceMessage && (
-        <div
-          className="glass-card-sm animate-slide-in-right"
-          style={{
-            padding: "10px 14px",
-            marginBottom: "14px",
-            fontSize: "12px",
-            color: "#60a5fa",
-            lineHeight: 1.5,
-          }}
-        >
+        <div className="glass-card-sm animate-slide-in-right px-3 py-2 mb-3 text-xs text-blue-400 leading-relaxed">
           🤖 {voiceMessage}
         </div>
       )}
 
-      {/* Stats Grid */}
-      <StockStats data={stockData} highlightedStats={highlightedStats} />
-
-      {/* Price Chart */}
-      <PriceChart data={(stockData.history ?? []).map((h: any) => ({ date: h.date || h.time, close: h.close ?? h.price ?? 0 }))} />
-
-      {/* AI Recommendation */}
-      {aiLoading && !aiAnalysis && (
-        <div
-          className="ai-banner badge-hold animate-fade-in-up"
-          style={{ textAlign: "center", padding: "16px" }}
-        >
-          <div style={{ fontSize: "12px", color: "#94a3b8" }}>
-            ✨ Analyzing with AI...
+      {/* ── OVERVIEW TAB ── */}
+      <div className={`flex-col gap-3 transition-opacity duration-300 ${activeTab === "Overview" ? "flex" : "hidden"}`}>
+        <StockStats data={stockData} highlightedStats={highlightedStats} />
+        {/* Simple Line Chart for Overview */}
+        <PriceChart data={(stockData.candlesticks || stockData.history || []).map((h: any) => ({ date: h.date || h.time, close: h.close ?? h.price ?? 0 }))} />
+        
+        {aiLoading && !aiAnalysis && (
+          <div className="ai-banner badge-hold animate-fade-in-up text-center p-4">
+            <div className="text-xs text-slate-400">✨ Analyzing with AI...</div>
+            <div className="skeleton w-3/5 h-3.5 mx-auto mt-2" />
           </div>
-          <div
-            className="skeleton"
-            style={{ width: "60%", height: "14px", margin: "10px auto 0" }}
-          />
+        )}
+        {aiAnalysis && <AIBanner analysis={aiAnalysis} />}
+      </div>
+
+      {/* ── TRADER TAB ── */}
+      {activeTab === "Trader" && (
+        <div className="flex-col gap-3 flex flex-1 min-h-[300px]">
+          <div className="glass-card-sm flex-1 p-2 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner relative overflow-hidden">
+            {stockData.candlesticks && stockData.candlesticks.length > 0 ? (
+              <TraderChart 
+                candlesticks={stockData.candlesticks} 
+                technicals={stockData.technicals} 
+                volumeProfile={stockData.volume_profile} 
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-slate-500 text-xs">
+                Candlestick data unavailable.
+              </div>
+            )}
+          </div>
         </div>
       )}
-      {aiAnalysis && <AIBanner analysis={aiAnalysis} />}
+
+      {/* ── INVESTOR TAB ── */}
+      {activeTab === "Investor" && (
+        <div className="flex-col gap-3 flex flex-1">
+          <div className="glass-card-sm h-[220px] p-2 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner">
+            <FinancialsChart financials={stockData.financials || []} currency={currency} />
+          </div>
+          <div className="glass-card-sm h-[200px] p-2 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner">
+            <ValuationBandsChart valuationHistory={stockData.valuation_history || []} />
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

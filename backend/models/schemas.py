@@ -20,6 +20,37 @@ class AIAnalysis(BaseSchema):
     key_points: Optional[List[str]] = None
     raw_analysis: Optional[str] = None
 
+class CandlePoint(BaseSchema):
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    vwap: Optional[float] = None
+
+class TechnicalIndicators(BaseSchema):
+    rsi_14: Optional[float] = None
+    macd: Optional[float] = None
+    macd_signal: Optional[float] = None
+    macd_hist: Optional[float] = None
+    vwap: Optional[float] = None
+
+class FinancialBreakdown(BaseSchema):
+    quarter: str
+    revenue: Optional[float] = None
+    gross_profit: Optional[float] = None
+    operating_income: Optional[float] = None
+    net_income: Optional[float] = None
+    operating_margin: Optional[float] = None
+
+class ValuationMultiplePoint(BaseSchema):
+    date: str
+    price: float
+    trailing_pe: Optional[float] = None
+    forward_pe: Optional[float] = None
+    ev_to_ebitda: Optional[float] = None
+
 class StockData(BaseSchema):
     symbol: str
     name: Optional[str] = None
@@ -33,7 +64,13 @@ class StockData(BaseSchema):
     volume: Optional[Union[int, float]] = None
     market_cap: Optional[Union[int, float]] = Field(default=None, alias="marketCap")
     pe_ratio: Optional[float] = Field(default=None, alias="peRatio")
+    currency: str = "USD"
     history: Optional[List[Dict[str, Any]]] = None
+    candlesticks: Optional[List[CandlePoint]] = None
+    technicals: Optional[TechnicalIndicators] = None
+    financials: Optional[List[FinancialBreakdown]] = None
+    valuation_history: Optional[List[ValuationMultiplePoint]] = None
+    volume_profile: Optional[List[Dict[str, float]]] = None
     sentiment: Optional[Union[SentimentResult, Dict[str, Any]]] = None
     analysis: Optional[AIAnalysis] = None
 
