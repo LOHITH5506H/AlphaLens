@@ -356,7 +356,7 @@ export default function HomePage() {
       {showDashboard && activeTicker && stockData.data && (
         <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-start justify-center p-6 md:p-12">
           {/* We position ARDashboard on the left side of the screen, or center on mobile */}
-          <div className="pointer-events-auto h-full flex items-center">
+          <div className="pointer-events-auto h-full flex items-center" style={{ maxWidth: '400px' }}>
             <ARDashboard 
               stockData={stockData.data}
               aiAnalysis={aiAnalysis.analysis}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Center, OrbitControls, PerspectiveCamera } from "@react-three/drei";
@@ -10,6 +10,85 @@ import { MARKER_MAPPINGS } from "@/lib/constants";
 import { recognizeLogo } from "@/lib/api";
 import type { StockData, AIAnalysis, StockInsights } from "@/types";
 import Stock3DVisuals from "./Stock3DVisuals";
+import { Surface } from "./visualizations/Surface";
+import { Cluster } from "./visualizations/Cluster";
+import { Trajectory } from "./visualizations/Trajectory";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Premium 3D Visualizations Wrapper (Mock Data)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function Premium3DVisuals() {
+  // 1. Surface Data (10x10 volatility matrix)
+  const surfaceData = useMemo(() => {
+    return Array.from({ length: 10 }, () =>
+      Array.from({ length: 10 }, () => Math.random() * 2)
+    );
+  }, []);
+
+  // 2. Cluster Data (20 nodes with features, highly connected)
+  const { clusterNodes, clusterEdges } = useMemo(() => {
+    const nodes = Array.from({ length: 20 }, (_, i) => ({
+      id: `node-${i}`,
+      ticker: `TICK${i}`,
+      features: [(Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8],
+      value: Math.random() * 2 + 0.5,
+    }));
+    const edges = [];
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        if (Math.random() > 0.85) {
+          edges.push({ source: nodes[i].id, target: nodes[j].id, correlation: 0.8 + Math.random() * 0.2 });
+        }
+      }
+    }
+    return { clusterNodes: nodes, clusterEdges: edges };
+  }, []);
+
+  // 3. Trajectory Data (30 historical candles, 10 forecasted days)
+  const { histData, forecastData } = useMemo(() => {
+    const hist = [];
+    let currentPrice = 100;
+    for (let i = 0; i < 30; i++) {
+      const open = currentPrice;
+      const close = open + (Math.random() - 0.5) * 5;
+      const high = Math.max(open, close) + Math.random() * 2;
+      const low = Math.min(open, close) - Math.random() * 2;
+      hist.push({ time: i, open, high, low, close });
+      currentPrice = close;
+    }
+    
+    const forecast = [];
+    for (let i = 0; i < 10; i++) {
+      currentPrice += (Math.random() - 0.4) * 3; // slight upward drift
+      forecast.push({
+        time: 30 + i,
+        price: currentPrice,
+        variance: 0.5 + i * 0.4, // expanding cone of uncertainty
+      });
+    }
+    return { histData: hist, forecastData: forecast };
+  }, []);
+
+  return (
+    <group position={[0, 2, -5]} scale={0.4}>
+      {/* Volatility Surface: Left */}
+      <group position={[-15, 0, 0]} scale={[2.5, 2.5, 2.5]}>
+        <Surface data={surfaceData} width={10} height={10} />
+      </group>
+
+      {/* Trajectory: Center */}
+      <group position={[0, 0, 0]} scale={[0.8, 0.8, 0.8]}>
+        <Trajectory historicalData={histData} forecastData={forecastData} />
+      </group>
+
+      {/* Cluster: Right */}
+      <group position={[25, 0, 0]} scale={[0.6, 0.6, 0.6]}>
+        <Cluster nodes={clusterNodes} edges={clusterEdges} />
+      </group>
+    </group>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -62,6 +141,7 @@ const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis, stockInsigh
     <group ref={groupRef} matrixAutoUpdate={false} visible={true}>
       <group rotation={[Math.PI / 2, 0, 0]} scale={[1.2, 1.2, 1.2]}>
         <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} onPinchStateChange={onPinchStateChange} />
+        <Premium3DVisuals />
       </group>
     </group>
   );
@@ -311,16 +391,18 @@ export default function ARScene({
 
             {isManualMode && stockData ? (
               <>
-                <PerspectiveCamera makeDefault position={[0, 0, 3.5]} fov={50} />
+                <PerspectiveCamera makeDefault position={[0, 5, 25]} fov={50} />
                 <OrbitControls
-                  enablePan={false}
-                  maxPolarAngle={Math.PI / 1.5}
-                  minPolarAngle={Math.PI / 4}
+                  makeDefault
+                  enablePan={true}
+                  enableZoom={true}
+                  enableRotate={true}
                   enableDamping
                   dampingFactor={0.05}
                 />
                 <Center>
                   <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} onPinchStateChange={onPinchStateChange} />
+                  <Premium3DVisuals />
                 </Center>
               </>
             ) : (

@@ -138,8 +138,7 @@ export default function ARDashboard({
       {/* ── OVERVIEW TAB ── */}
       <div className={`flex-col gap-3 transition-opacity duration-300 ${activeTab === "Overview" ? "flex" : "hidden"}`}>
         <StockStats data={stockData} highlightedStats={highlightedStats} />
-        {/* Simple Line Chart for Overview */}
-        <PriceChart data={(stockData.candlesticks || stockData.history || []).map((h: any) => ({ date: h.date || h.time, close: h.close ?? h.price ?? 0 }))} />
+        {/* Removed legacy 2D PriceChart */}
         
         {aiLoading && !aiAnalysis && (
           <div className="ai-banner badge-hold animate-fade-in-up text-center p-4">
@@ -154,17 +153,11 @@ export default function ARDashboard({
       {activeTab === "Trader" && (
         <div className="flex-col gap-3 flex flex-1 min-h-[300px]">
           <div className="glass-card-sm flex-1 p-2 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner relative overflow-hidden">
-            {stockData.candlesticks && stockData.candlesticks.length > 0 ? (
-              <TraderChart 
-                candlesticks={stockData.candlesticks} 
-                technicals={stockData.technicals} 
-                volumeProfile={stockData.volume_profile} 
-              />
-            ) : (
-              <div className="flex items-center justify-center h-full text-slate-500 text-xs">
-                Candlestick data unavailable.
-              </div>
-            )}
+             <div className="flex items-center justify-center h-full text-slate-500 text-xs text-center p-4">
+                Legacy 2D charting removed.
+                <br />
+                Please view the 3D visualizations in the AR environment.
+             </div>
           </div>
         </div>
       )}
@@ -172,11 +165,11 @@ export default function ARDashboard({
       {/* ── INVESTOR TAB ── */}
       {activeTab === "Investor" && (
         <div className="flex-col gap-3 flex flex-1">
-          <div className="glass-card-sm h-[220px] p-2 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner">
-            <FinancialsChart financials={stockData.financials || []} currency={currency} />
+          <div className="glass-card-sm h-[220px] p-2 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner flex items-center justify-center text-slate-500 text-xs">
+            Financials (Legacy 2D Chart Removed)
           </div>
-          <div className="glass-card-sm h-[200px] p-2 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner">
-            <ValuationBandsChart valuationHistory={stockData.valuation_history || []} />
+          <div className="glass-card-sm h-[200px] p-2 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner flex items-center justify-center text-slate-500 text-xs">
+            Valuation Bands (Legacy 2D Chart Removed)
           </div>
         </div>
       )}
