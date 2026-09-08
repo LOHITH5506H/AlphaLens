@@ -1,25 +1,38 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef } from "react";
 
 interface HandCursorProps {
-  x: number;
-  y: number;
+  coordsRef: React.MutableRefObject<{ x: number; y: number }>;
   isPinching: boolean;
   isVisible: boolean;
 }
 
-export default function HandCursor({ x, y, isPinching, isVisible }: HandCursorProps) {
-  // Add a slight smoothing/lerp to make it feel natural
-  const [smoothX, setSmoothX] = useState(x);
-  const [smoothY, setSmoothY] = useState(y);
+export default function HandCursor({ coordsRef, isPinching, isVisible }: HandCursorProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Simple low-pass filter for smoothing
-    const lerpFactor = 0.3;
-    setSmoothX((prev) => prev + (x - prev) * lerpFactor);
-    setSmoothY((prev) => prev + (y - prev) * lerpFactor);
-  }, [x, y]);
+    if (!isVisible) return;
+    
+    let rafId: number;
+    let smoothX = coordsRef.current.x;
+    let smoothY = coordsRef.current.y;
+    
+    const loop = () => {
+      const { x, y } = coordsRef.current;
+      const lerpFactor = 0.3;
+      smoothX = smoothX + (x - smoothX) * lerpFactor;
+      smoothY = smoothY + (y - smoothY) * lerpFactor;
+      
+      if (containerRef.current) {
+        containerRef.current.style.transform = `translate(${smoothX * window.innerWidth}px, ${smoothY * window.innerHeight}px)`;
+      }
+      rafId = requestAnimationFrame(loop);
+    };
+    
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, [isVisible, coordsRef]);
 
   if (!isVisible) return null;
 
@@ -34,76 +47,33 @@ export default function HandCursor({ x, y, isPinching, isVisible }: HandCursorPr
         position: "fixed",
         top: 0,
         left: 0,
-        width: "100vw",
-        height: "100vh",
         pointerEvents: "none",
         zIndex: 9999,
       }}
     >
-      <div
-        style={{
-          position: "absolute",
-          left: `${smoothX * 100}%`,
-          top: `${smoothY * 100}%`,
-          width: `${cursorSize}px`,
-          height: `${cursorSize}px`,
-          borderRadius: "50%",
-          background: cursorColor,
-          border: `${borderSize} solid ${borderColor}`,
-          transform: "translate(-50%, -50%)",
-          transition: "width 0.15s ease, height 0.15s ease, background 0.15s ease",
-          boxShadow: isPinching ? "0 0 15px rgba(56, 189, 248, 0.8)" : "0 0 5px rgba(0,0,0,0.3)",
-        }}
-      />
-      {/* Target reticle styling */}
-      {!isPinching && (
-        <>
-          <div
-            style={{
-              position: "absolute",
-              left: `${smoothX * 100}%`,
-              top: `calc(${smoothY * 100}% - 20px)`,
-              width: "2px",
-              height: "10px",
-              background: "rgba(255,255,255,0.7)",
-              transform: "translateX(-50%)",
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              left: `${smoothX * 100}%`,
-              top: `calc(${smoothY * 100}% + 10px)`,
-              width: "2px",
-              height: "10px",
-              background: "rgba(255,255,255,0.7)",
-              transform: "translateX(-50%)",
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              left: `calc(${smoothX * 100}% - 20px)`,
-              top: `${smoothY * 100}%`,
-              width: "10px",
-              height: "2px",
-              background: "rgba(255,255,255,0.7)",
-              transform: "translateY(-50%)",
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              left: `calc(${smoothX * 100}% + 10px)`,
-              top: `${smoothY * 100}%`,
-              width: "10px",
-              height: "2px",
-              background: "rgba(255,255,255,0.7)",
-              transform: "translateY(-50%)",
-            }}
-          />
-        </>
-      )}
+      <div ref={containerRef} style={{ position: "absolute", top: 0, left: 0 }}>
+        <div
+          style={{
+            position: "absolute",
+            width: `${cursorSize}px`,
+            height: `${cursorSize}px`,
+            borderRadius: "50%",
+            background: cursorColor,
+            border: `${borderSize} solid ${borderColor}`,
+            transform: "translate(-50%, -50%)",
+            transition: "width 0.15s ease, height 0.15s ease, background 0.15s ease",
+            boxShadow: isPinching ? "0 0 15px rgba(56, 189, 248, 0.8)" : "0 0 5px rgba(0,0,0,0.3)",
+          }}
+        />
+        {!isPinching && (
+          <>
+            <div style={{ position: "absolute", left: 0, top: "-20px", width: "2px", height: "10px", background: "rgba(255,255,255,0.7)", transform: "translateX(-50%)" }} />
+            <div style={{ position: "absolute", left: 0, top: "10px", width: "2px", height: "10px", background: "rgba(255,255,255,0.7)", transform: "translateX(-50%)" }} />
+            <div style={{ position: "absolute", left: "-20px", top: 0, width: "10px", height: "2px", background: "rgba(255,255,255,0.7)", transform: "translateY(-50%)" }} />
+            <div style={{ position: "absolute", left: "10px", top: 0, width: "10px", height: "2px", background: "rgba(255,255,255,0.7)", transform: "translateY(-50%)" }} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -3,8 +3,6 @@ import * as mpHands from "@mediapipe/hands";
 import * as mpCam from "@mediapipe/camera_utils";
 
 export interface HandGestureState {
-  x: number;
-  y: number;
   isPinching: boolean;
   isMiddlePinching: boolean;
   swipeDirection: "left" | "right" | null;
@@ -13,68 +11,83 @@ export interface HandGestureState {
 
 export function useHandTracking(enabled: boolean = true) {
   const [gestureState, setGestureState] = useState<HandGestureState>({
-    x: 0,
-    y: 0,
     isPinching: false,
     isMiddlePinching: false,
     swipeDirection: null,
     isVisible: false,
   });
 
+  const coordsRef = useRef({ x: 0, y: 0 });
+
   const handsRef = useRef<any>(null);
   const cameraRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  const lastXRef = useRef<number>(0);
   const pinchStateRef = useRef({ index: false, middle: false });
+  const rafRef = useRef<number>(0);
 
   const onResults = useCallback((results: any) => {
-    if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-      setGestureState((prev) => ({ ...prev, isVisible: false, swipeDirection: null, isPinching: false, isMiddlePinching: false }));
-      pinchStateRef.current = { index: false, middle: false };
-      return;
-    }
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
-    const landmarks = results.multiHandLandmarks[0];
-    
-    const wrist = landmarks[0];
-    const thumbTip = landmarks[4];
-    const indexTip = landmarks[8];
-    const middleTip = landmarks[12];
+    rafRef.current = requestAnimationFrame(() => {
+      if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+        setGestureState((prev) => {
+          if (!prev.isVisible) return prev;
+          return { ...prev, isVisible: false, swipeDirection: null, isPinching: false, isMiddlePinching: false };
+        });
+        pinchStateRef.current = { index: false, middle: false };
+        return;
+      }
 
-    const x = 1 - indexTip.x;
-    const y = indexTip.y;
+      const landmarks = results.multiHandLandmarks[0];
+      
+      const thumbTip = landmarks[4];
+      const indexTip = landmarks[8];
+      const middleTip = landmarks[12];
 
-    // Distances
-    const indexDist = Math.sqrt(
-      Math.pow(indexTip.x - thumbTip.x, 2) + Math.pow(indexTip.y - thumbTip.y, 2) + Math.pow(indexTip.z - thumbTip.z, 2)
-    );
-    const middleDist = Math.sqrt(
-      Math.pow(middleTip.x - thumbTip.x, 2) + Math.pow(middleTip.y - thumbTip.y, 2) + Math.pow(middleTip.z - thumbTip.z, 2)
-    );
+      const x = 1 - indexTip.x;
+      const y = indexTip.y;
+      
+      // Update coordinates in ref (no React re-render)
+      coordsRef.current = { x, y };
 
-    // Hysteresis thresholds to prevent flickering
-    const PINCH_ENGAGE = 0.04;
-    const PINCH_RELEASE = 0.06;
+      // Distances
+      const indexDist = Math.sqrt(
+        Math.pow(indexTip.x - thumbTip.x, 2) + Math.pow(indexTip.y - thumbTip.y, 2) + Math.pow(indexTip.z - thumbTip.z, 2)
+      );
+      const middleDist = Math.sqrt(
+        Math.pow(middleTip.x - thumbTip.x, 2) + Math.pow(middleTip.y - thumbTip.y, 2) + Math.pow(middleTip.z - thumbTip.z, 2)
+      );
 
-    let isIndexPinching = pinchStateRef.current.index;
-    if (!isIndexPinching && indexDist < PINCH_ENGAGE) isIndexPinching = true;
-    else if (isIndexPinching && indexDist > PINCH_RELEASE) isIndexPinching = false;
+      // Hysteresis thresholds
+      const PINCH_ENGAGE = 0.04;
+      const PINCH_RELEASE = 0.06;
 
-    let isMiddlePinching = pinchStateRef.current.middle;
-    if (!isMiddlePinching && middleDist < PINCH_ENGAGE) isMiddlePinching = true;
-    else if (isMiddlePinching && middleDist > PINCH_RELEASE) isMiddlePinching = false;
+      let isIndexPinching = pinchStateRef.current.index;
+      if (!isIndexPinching && indexDist < PINCH_ENGAGE) isIndexPinching = true;
+      else if (isIndexPinching && indexDist > PINCH_RELEASE) isIndexPinching = false;
 
-    pinchStateRef.current = { index: isIndexPinching, middle: isMiddlePinching };
+      let isMiddlePinching = pinchStateRef.current.middle;
+      if (!isMiddlePinching && middleDist < PINCH_ENGAGE) isMiddlePinching = true;
+      else if (isMiddlePinching && middleDist > PINCH_RELEASE) isMiddlePinching = false;
 
-    // We removed swipe because it conflicts with pointing. The user can just click tabs.
-    setGestureState({
-      x,
-      y,
-      isPinching: isIndexPinching,
-      isMiddlePinching: isMiddlePinching,
-      swipeDirection: null,
-      isVisible: true,
+      pinchStateRef.current = { index: isIndexPinching, middle: isMiddlePinching };
+
+      setGestureState((prev) => {
+        if (
+          prev.isPinching === isIndexPinching &&
+          prev.isMiddlePinching === isMiddlePinching &&
+          prev.isVisible === true
+        ) {
+          return prev;
+        }
+        return {
+          isPinching: isIndexPinching,
+          isMiddlePinching: isMiddlePinching,
+          swipeDirection: null,
+          isVisible: true,
+        };
+      });
     });
   }, []);
 
@@ -151,5 +164,5 @@ export function useHandTracking(enabled: boolean = true) {
     };
   }, [enabled, onResults]);
 
-  return gestureState;
+  return { gestureState, coordsRef };
 }

@@ -70,7 +70,7 @@ export default function HomePage() {
   const aiAnalysis = useAIAnalysis();
   const stockInsights = useStockInsights();
   const speech = useSpeech();
-  const gestureState = useHandTracking(isHandTrackingEnabled);
+  const { gestureState, coordsRef } = useHandTracking(isHandTrackingEnabled);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -210,8 +210,47 @@ export default function HomePage() {
     };
   }, []);
 
+  // Handle continuous pointermove outside of React state
   useEffect(() => {
-    // Sync pinch state for AR 3D rotation if needed
+    if (!gestureState.isVisible) return;
+    
+    let rafId: number;
+    
+    const loop = () => {
+      const clientX = coordsRef.current.x * window.innerWidth;
+      const clientY = coordsRef.current.y * window.innerHeight;
+      
+      const element = document.elementFromPoint(clientX, clientY);
+      
+      if (gestureState.isMiddlePinching) {
+        const deltaY = clientY - lastYRef.current;
+        if (Math.abs(deltaY) > 2) {
+          if (element) {
+            const wheelEvent = new WheelEvent("wheel", { bubbles: true, cancelable: true, clientX, clientY, deltaY: deltaY * 3 });
+            element.dispatchEvent(wheelEvent);
+          }
+          lastYRef.current = clientY;
+        }
+      } else {
+        lastYRef.current = clientY;
+        if (element) {
+          const moveEvent = new PointerEvent("pointermove", {
+            bubbles: true, cancelable: true, clientX, clientY, pointerId: 99, pointerType: "mouse",
+            buttons: prevPinchRef.current ? 1 : 0
+          });
+          element.dispatchEvent(moveEvent);
+        }
+      }
+      
+      rafId = requestAnimationFrame(loop);
+    };
+    
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, [gestureState.isVisible, gestureState.isMiddlePinching, coordsRef]);
+
+  // Handle discrete pointerdown/up and AR state sync
+  useEffect(() => {
     if (gestureState.isVisible) {
       setIsPinching(gestureState.isPinching);
     }
@@ -221,98 +260,34 @@ export default function HomePage() {
       return;
     }
 
-    const clientX = gestureState.x * window.innerWidth;
-    const clientY = gestureState.y * window.innerHeight;
-    
-    // Find the element exactly under the virtual cursor
+    const clientX = coordsRef.current.x * window.innerWidth;
+    const clientY = coordsRef.current.y * window.innerHeight;
     const element = document.elementFromPoint(clientX, clientY);
-
-    // Zooming logic using Middle Pinch
-    if (gestureState.isMiddlePinching) {
-      const deltaY = clientY - lastYRef.current;
-      // Trigger scroll/zoom if moved enough
-      if (Math.abs(deltaY) > 2) {
-        if (element) {
-          const wheelEvent = new WheelEvent("wheel", {
-            bubbles: true,
-            cancelable: true,
-            clientX,
-            clientY,
-            deltaY: deltaY * 3, // Amplify movement for zoom
-          });
-          element.dispatchEvent(wheelEvent);
-        }
-        lastYRef.current = clientY;
-      }
-    } else {
-      lastYRef.current = clientY;
-    }
 
     const isJustPinched = gestureState.isPinching && !prevPinchRef.current;
     const isJustReleased = !gestureState.isPinching && prevPinchRef.current;
     
-    // Dispatch standard pointer events so React/R3F think it's a mouse
     if (element && !gestureState.isMiddlePinching) {
-      // 1. Move Event (for dragging OrbitControls or hover effects)
-      const moveEvent = new PointerEvent("pointermove", {
-        bubbles: true,
-        cancelable: true,
-        clientX,
-        clientY,
-        pointerId: 99, // use a unique pointer ID
-        pointerType: "mouse",
-        buttons: gestureState.isPinching ? 1 : 0
-      });
-      element.dispatchEvent(moveEvent);
-
-      // 2. Down Event (Pinch Start)
       if (isJustPinched) {
-        const downEvent = new PointerEvent("pointerdown", {
-          bubbles: true,
-          cancelable: true,
-          clientX,
-          clientY,
-          pointerId: 99,
-          pointerType: "mouse",
-          buttons: 1
-        });
+        const downEvent = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, clientX, clientY, pointerId: 99, pointerType: "mouse", buttons: 1 });
         element.dispatchEvent(downEvent);
         lastElementRef.current = element;
       }
-
-      // 3. Up Event & Click (Pinch Release)
       if (isJustReleased) {
         const target = lastElementRef.current || element;
-        
-        const upEvent = new PointerEvent("pointerup", {
-          bubbles: true,
-          cancelable: true,
-          clientX,
-          clientY,
-          pointerId: 99,
-          pointerType: "mouse",
-          buttons: 0
-        });
+        const upEvent = new PointerEvent("pointerup", { bubbles: true, cancelable: true, clientX, clientY, pointerId: 99, pointerType: "mouse", buttons: 0 });
         target.dispatchEvent(upEvent);
-        
-        // Also trigger native click for standard HTML buttons
-        if (target instanceof HTMLElement) {
-          target.click();
-        }
-        
+        if (target instanceof HTMLElement) target.click();
         lastElementRef.current = null;
       }
     } else if (isJustReleased && lastElementRef.current) {
-        // Fire UP event even if released outside the window/element
-        const upEvent = new PointerEvent("pointerup", {
-          bubbles: true, cancelable: true, clientX, clientY, pointerId: 99, pointerType: "mouse", buttons: 0
-        });
+        const upEvent = new PointerEvent("pointerup", { bubbles: true, cancelable: true, clientX, clientY, pointerId: 99, pointerType: "mouse", buttons: 0 });
         lastElementRef.current.dispatchEvent(upEvent);
         lastElementRef.current = null;
     }
 
     prevPinchRef.current = gestureState.isPinching;
-  }, [gestureState.isPinching, gestureState.isMiddlePinching, gestureState.isVisible, gestureState.x, gestureState.y]);
+  }, [gestureState.isPinching, gestureState.isMiddlePinching, gestureState.isVisible, coordsRef]);
 
   // Derived data for HUD
   const price = stockData.data?.price ?? 0;
@@ -435,8 +410,7 @@ export default function HomePage() {
           </button>
           
           <HandCursor 
-            x={gestureState.x} 
-            y={gestureState.y} 
+            coordsRef={coordsRef} 
             isPinching={gestureState.isPinching} 
             isVisible={gestureState.isVisible} 
           />
