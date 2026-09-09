@@ -18,6 +18,7 @@ interface StockStatsProps {
   data: StockData;
   /** Optional: highlight only specific stats (for voice command filtering) */
   highlightedStats?: string[];
+  onSelectMetric?: (metric: string) => void;
 }
 
 interface StatItem {
@@ -77,7 +78,7 @@ function MiniSparkline({ color }: { color: string }) {
   return <div ref={containerRef} className="sparkline-container" />;
 }
 
-export default function StockStats({ data, highlightedStats }: StockStatsProps) {
+export default function StockStats({ data, highlightedStats, onSelectMetric }: StockStatsProps) {
   // Fall back to dummy data if price is missing
   const effectiveData =
     data.price == null
@@ -130,8 +131,17 @@ export default function StockStats({ data, highlightedStats }: StockStatsProps) 
       {displayed.map((stat, i) => (
         <div
           key={stat.key}
-          className="stat-card animate-fade-in-up"
+          className="stat-card animate-fade-in-up cursor-pointer hover:border-cyan-500 transition-all"
           style={{ animationDelay: `${i * 80}ms` }}
+          onClick={() => {
+            if (onSelectMetric) {
+              if (stat.key === "pe") onSelectMetric("PE_RATIO");
+              else if (stat.key === "volume") onSelectMetric("VOLUME");
+              else if (stat.key === "market_cap") onSelectMetric("MARKET_CAP");
+              else if (stat.key === "52w_high" || stat.key === "52w_low" || stat.key === "open") onSelectMetric("DAY_RANGE");
+              else onSelectMetric("INTRADAY");
+            }
+          }}
         >
           <div className="label">{stat.label}</div>
           <div className="value">{stat.value}</div>

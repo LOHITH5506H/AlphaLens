@@ -12,6 +12,7 @@ import { useSpeech } from "@/hooks/useSpeech";
 import { useHandTracking } from "@/hooks/useHandTracking";
 import HandCursor from "@/components/HandCursor";
 import { sendVoiceCommand, searchTicker } from "@/lib/api";
+import type { FundamentalMetricResponse } from "@/types";
 
 // Dynamically import ARScene with SSR disabled (needs browser APIs)
 const ARScene = dynamic(() => import("@/components/ARScene"), {
@@ -62,7 +63,15 @@ export default function HomePage() {
   const [voiceMessage, setVoiceMessage] = useState<string | null>(null);
   const [isManual, setIsManual] = useState(false);
   
-  const [activeTab, setActiveTab] = useState<"Overview" | "Trader" | "Investor">("Overview");
+  const [activeTab, setActiveTab] = useState<"Trader" | "Investor">("Investor");
+  const [activeMetric, setActiveMetric] = useState<string>("INTRADAY");
+  const [timeframe, setTimeframe] = useState<string>("1Yr");
+  const [activeIndicators, setActiveIndicators] = useState<Record<string, boolean>>({
+    sma: false,
+    bollinger: false,
+    macd: false
+  });
+  const [selectedMetricData, setSelectedMetricData] = useState<FundamentalMetricResponse | null>(null);
   const [isPinching, setIsPinching] = useState(false);
   const [isHandTrackingEnabled, setIsHandTrackingEnabled] = useState(false);
 
@@ -89,9 +98,10 @@ export default function HomePage() {
       setHighlightedStats(undefined);
       setVoiceMessage(null);
       setIsManual(manualTrigger);
-      setActiveTab("Overview"); // Reset tab on new ticker
+      setActiveTab("Investor"); // Reset tab on new ticker
+      setActiveMetric("INTRADAY");
 
-      stockData.fetch(ticker).then((data) => {
+      stockData.fetch(ticker, timeframe).then((data) => {
         if (data) {
           const text = `${data.name ?? data.symbol} (${data.symbol}) is currently trading at $${data.price}. It has a market cap of $${data.marketCap ?? 'N/A'} and a PE ratio of ${data.peRatio ?? 'N/A'}.`;
           aiAnalysis.fetch(text);
@@ -110,12 +120,33 @@ export default function HomePage() {
       const ticker = activeTickerRef.current;
       if (!ticker) return;
 
-      stockData.fetch(ticker);
+      stockData.fetch(ticker, timeframe);
       stockInsights.fetch(ticker);
     }, REFRESH_INTERVAL_MS);
 
     return () => clearInterval(intervalId);
-  }, [activeTicker, stockData, stockInsights]);
+  }, [activeTicker, stockData, stockInsights, timeframe]);
+
+  useEffect(() => {
+    if (activeTicker) {
+      stockData.fetch(activeTicker, timeframe);
+    }
+  }, [timeframe]);
+
+  useEffect(() => {
+    if (!activeTicker) return;
+    const basicMetrics = ["INTRADAY", "VOLUME", "MARKET_CAP", "DAY_RANGE"];
+    if (basicMetrics.includes(activeMetric)) {
+      setSelectedMetricData(null);
+      return;
+    }
+    fetch(`http://localhost:8000/api/stock/${activeTicker}/metric/${activeMetric}?timeframe=${timeframe}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.detail) setSelectedMetricData(data);
+      })
+      .catch(e => console.error("Error fetching metric:", e));
+  }, [activeTicker, activeMetric, timeframe]);
 
   const handleManualScan = useCallback(async (query: string) => {
     const cleanQuery = query.trim();
@@ -171,7 +202,7 @@ export default function HomePage() {
   }, [speech.transcript, speech.isListening, aiAnalysis]);
 
   // Handle Hand Gestures
-  const tabs: ("Overview" | "Trader" | "Investor")[] = ["Overview", "Trader", "Investor"];
+  const tabs: ("Trader" | "Investor")[] = ["Trader", "Investor"];
   
   useEffect(() => {
     if (gestureState.swipeDirection === "left") {
@@ -313,6 +344,11 @@ export default function HomePage() {
           stockInsights={stockInsights.insights}
           isManualMode={isManual}
           activeTab={activeTab}
+          activeMetric={activeMetric}
+          selectedMetricData={selectedMetricData}
+          timeframe={timeframe}
+          onTimeframeChange={setTimeframe}
+          activeIndicators={activeIndicators}
           onPinchStateChange={setIsPinching}
           onTargetFound={(index, ticker, isFallback) => handleTargetFound(index, ticker, isFallback)}
           onTargetLost={(index) => {}}
@@ -341,7 +377,12 @@ export default function HomePage() {
               highlightedStats={highlightedStats}
               voiceMessage={voiceMessage}
               activeTab={activeTab}
+              activeIndicators={activeIndicators}
               onTabChange={setActiveTab}
+              onSelectMetric={setActiveMetric}
+              onToggleIndicator={(indicator: string) => {
+                setActiveIndicators(prev => ({...prev, [indicator]: !prev[indicator]}));
+              }}
             />
           </div>
         </div>

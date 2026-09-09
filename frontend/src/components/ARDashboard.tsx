@@ -16,7 +16,6 @@ import PriceChart from "./PriceChart";
 import AIBanner from "./AIBanner";
 import LoadingOverlay from "./LoadingOverlay";
 import TraderChart from "./TraderChart";
-import FinancialsChart from "./FinancialsChart";
 import ValuationBandsChart from "./ValuationBandsChart";
 
 interface ARDashboardProps {
@@ -27,8 +26,11 @@ interface ARDashboardProps {
   error: string | null;
   highlightedStats?: string[];
   voiceMessage?: string | null;
-  activeTab: "Overview" | "Trader" | "Investor";
-  onTabChange: (tab: "Overview" | "Trader" | "Investor") => void;
+  activeTab: "Trader" | "Investor";
+  onTabChange: (tab: "Trader" | "Investor") => void;
+  onSelectMetric?: (metric: string) => void;
+  activeIndicators?: Record<string, boolean>;
+  onToggleIndicator?: (indicator: string) => void;
 }
 
 export default function ARDashboard({
@@ -40,8 +42,12 @@ export default function ARDashboard({
   highlightedStats,
   voiceMessage,
   activeTab,
+  activeIndicators,
   onTabChange,
+  onSelectMetric,
+  onToggleIndicator,
 }: ARDashboardProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   if (stockLoading && !stockData) {
     return <LoadingOverlay />;
@@ -71,11 +77,24 @@ export default function ARDashboard({
   const currency = stockData.currency || "USD";
 
   return (
-    <div className="ar-dashboard animate-fade-in-up flex flex-col pointer-events-auto" style={{ maxHeight: '85vh', overflowY: 'auto' }}>
+    <div className={`ar-dashboard animate-fade-in-up flex flex-col pointer-events-auto transition-all duration-300 ${isCollapsed ? 'w-16 h-16 rounded-full justify-center items-center overflow-hidden p-0' : ''}`} style={{ maxHeight: '85vh', width: isCollapsed ? '64px' : '350px', resize: isCollapsed ? 'none' : 'both', overflow: isCollapsed ? 'hidden' : 'auto' }}>
       
-      {/* Tab Toggle Header */}
-      <div className="flex bg-[#0f172a] bg-opacity-80 p-1 rounded-xl mb-3 border border-slate-700/50 sticky top-0 z-50 backdrop-blur-md">
-        {(["Overview", "Trader", "Investor"] as const).map((tab) => (
+      {isCollapsed ? (
+        <button onClick={() => setIsCollapsed(false)} className="w-full h-full text-2xl hover:scale-110 transition-transform">
+          📊
+        </button>
+      ) : (
+        <>
+          <div className="flex justify-between items-center mb-2">
+            <div className="text-xs text-slate-400 font-bold tracking-widest">DASHBOARD</div>
+            <button onClick={() => setIsCollapsed(true)} className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800 transition-colors">
+              —
+            </button>
+          </div>
+
+          {/* Tab Toggle Header */}
+          <div className="flex bg-[#0f172a] bg-opacity-80 p-1 rounded-xl mb-3 border border-slate-700/50 sticky top-0 z-50 backdrop-blur-md">
+            {(["Trader", "Investor"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => onTabChange(tab)}
@@ -85,7 +104,6 @@ export default function ARDashboard({
                 : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent"
             }`}
           >
-            {tab === "Overview" && "📊 "}
             {tab === "Trader" && "📈 "}
             {tab === "Investor" && "🏢 "}
             {tab}
@@ -135,24 +153,26 @@ export default function ARDashboard({
         </div>
       )}
 
-      {/* ── OVERVIEW TAB ── */}
-      <div className={`flex-col gap-3 transition-opacity duration-300 ${activeTab === "Overview" ? "flex" : "hidden"}`}>
-        <StockStats data={stockData} highlightedStats={highlightedStats} />
-        {/* Simple Line Chart for Overview */}
-        <PriceChart data={(stockData.candlesticks || stockData.history || []).map((h: any) => ({ date: h.date || h.time, close: h.close ?? h.price ?? 0 }))} />
-        
-        {aiLoading && !aiAnalysis && (
-          <div className="ai-banner badge-hold animate-fade-in-up text-center p-4">
-            <div className="text-xs text-slate-400">✨ Analyzing with AI...</div>
-            <div className="skeleton w-3/5 h-3.5 mx-auto mt-2" />
-          </div>
-        )}
-        {aiAnalysis && <AIBanner analysis={aiAnalysis} />}
-      </div>
+      {/* ── OVERVIEW REMOVED ── */}
 
       {/* ── TRADER TAB ── */}
       {activeTab === "Trader" && (
         <div className="flex-col gap-3 flex flex-1 min-h-[300px]">
+          <div className="flex gap-2 mb-1 overflow-x-auto pb-1">
+            {["sma", "bollinger", "macd"].map(ind => (
+              <button 
+                key={ind}
+                onClick={() => onToggleIndicator?.(ind)}
+                className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                  activeIndicators?.[ind] 
+                    ? "bg-blue-500/20 text-blue-400 border-blue-500/50" 
+                    : "bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-700/50"
+                }`}
+              >
+                {ind.toUpperCase()}
+              </button>
+            ))}
+          </div>
           <div className="glass-card-sm flex-1 p-2 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner relative overflow-hidden">
             {stockData.candlesticks && stockData.candlesticks.length > 0 ? (
               <TraderChart 
@@ -172,15 +192,45 @@ export default function ARDashboard({
       {/* ── INVESTOR TAB ── */}
       {activeTab === "Investor" && (
         <div className="flex-col gap-3 flex flex-1">
-          <div className="glass-card-sm h-[220px] p-2 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner">
-            <FinancialsChart financials={stockData.financials || []} currency={currency} />
+          <div className="glass-card-sm p-3 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner">
+            <div className="text-xs font-bold text-slate-400 mb-3">FUNDAMENTAL METRICS (3D)</div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: "PE_RATIO", label: "P/E Ratio", color: "bg-blue-500/10 text-blue-400" },
+                { id: "PB_RATIO", label: "P/B Ratio", color: "bg-indigo-500/10 text-indigo-400" },
+                { id: "PEG_RATIO", label: "PEG Ratio", color: "bg-purple-500/10 text-purple-400" },
+                { id: "DIVIDEND_YIELD", label: "Div Yield", color: "bg-emerald-500/10 text-emerald-400" },
+                { id: "ROE", label: "ROE", color: "bg-amber-500/10 text-amber-400" },
+                { id: "ROA", label: "ROA", color: "bg-yellow-500/10 text-yellow-400" },
+                { id: "EBITDA_MARGIN", label: "EBITDA Mgn", color: "bg-orange-500/10 text-orange-400" },
+                { id: "NET_MARGIN", label: "Net Margin", color: "bg-rose-500/10 text-rose-400" },
+                { id: "FCF", label: "Free Cash Flow", color: "bg-green-500/10 text-green-400" },
+                { id: "DEBT_EQUITY", label: "D/E Ratio", color: "bg-red-500/10 text-red-400" },
+                { id: "NET_INTEREST_MARGIN", label: "NIM", color: "bg-cyan-500/10 text-cyan-400" },
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => onSelectMetric?.(m.id)}
+                  className={`p-2 text-xs font-semibold rounded-lg border border-slate-700/50 hover:border-slate-500 transition-colors ${m.color}`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="glass-card-sm h-[200px] p-2 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner">
-            <ValuationBandsChart valuationHistory={stockData.valuation_history || []} />
-          </div>
+          
+          {aiLoading && !aiAnalysis && (
+            <div className="ai-banner badge-hold animate-fade-in-up text-center p-4">
+              <div className="text-xs text-slate-400">✨ Analyzing with AI...</div>
+              <div className="skeleton w-3/5 h-3.5 mx-auto mt-2" />
+            </div>
+          )}
+          {aiAnalysis && <AIBanner analysis={aiAnalysis} />}
         </div>
       )}
 
+        </>
+      )}
     </div>
   );
 }

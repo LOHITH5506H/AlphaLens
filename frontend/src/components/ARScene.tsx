@@ -8,7 +8,7 @@ import { EffectComposer, Bloom } from "@react-three/postprocessing";
 
 import { MARKER_MAPPINGS } from "@/lib/constants";
 import { recognizeLogo } from "@/lib/api";
-import type { StockData, AIAnalysis, StockInsights } from "@/types";
+import type { StockData, AIAnalysis, StockInsights, FundamentalMetricResponse } from "@/types";
 import Stock3DVisuals from "./Stock3DVisuals";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,7 +21,12 @@ interface ARSceneProps {
   aiError?: string | null;
   stockInsights?: StockInsights | null;
   isManualMode?: boolean;
-  activeTab?: "Overview" | "Trader" | "Investor";
+  activeTab?: "Trader" | "Investor";
+  activeMetric?: string;
+  selectedMetricData?: FundamentalMetricResponse | null;
+  timeframe?: string;
+  onTimeframeChange?: (t: string) => void;
+  activeIndicators?: Record<string, boolean>;
   onPinchStateChange?: (isPinching: boolean) => void;
   onTargetFound: (targetIndex: number, ticker: string, isFallback?: boolean) => void;
   onTargetLost: (targetIndex: number) => void;
@@ -32,7 +37,7 @@ interface ARSceneProps {
 // ARTracker — Bridges MindAR computer vision ↔ R3F scene graph
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis, stockInsights, activeTab, onPinchStateChange }: any) => {
+const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis, stockInsights, activeTab, activeMetric, selectedMetricData, timeframe, onTimeframeChange, activeIndicators, onPinchStateChange }: any) => {
   const { camera } = useThree();
   const groupRef = useRef<THREE.Group>(null);
 
@@ -61,7 +66,7 @@ const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis, stockInsigh
   return (
     <group ref={groupRef} matrixAutoUpdate={false} visible={true}>
       <group rotation={[Math.PI / 2, 0, 0]} scale={[1.2, 1.2, 1.2]}>
-        <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} onPinchStateChange={onPinchStateChange} />
+        <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} activeMetric={activeMetric} selectedMetricData={selectedMetricData} timeframe={timeframe} onTimeframeChange={onTimeframeChange} activeIndicators={activeIndicators} onPinchStateChange={onPinchStateChange} />
       </group>
     </group>
   );
@@ -118,6 +123,11 @@ export default function ARScene({
   aiError,
   stockInsights,
   activeTab,
+  activeMetric,
+  selectedMetricData,
+  timeframe,
+  onTimeframeChange,
+  activeIndicators,
   onPinchStateChange,
   onTargetFound,
   onTargetLost,
@@ -320,7 +330,7 @@ export default function ARScene({
                   dampingFactor={0.05}
                 />
                 <Center>
-                  <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} onPinchStateChange={onPinchStateChange} />
+                  <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} activeMetric={activeMetric} selectedMetricData={selectedMetricData} timeframe={timeframe} onTimeframeChange={onTimeframeChange} activeIndicators={activeIndicators} onPinchStateChange={onPinchStateChange} />
                 </Center>
               </>
             ) : (
@@ -331,6 +341,11 @@ export default function ARScene({
                 aiAnalysis={aiAnalysis}
                 stockInsights={stockInsights}
                 activeTab={activeTab}
+                activeMetric={activeMetric}
+                selectedMetricData={selectedMetricData}
+                timeframe={timeframe}
+                onTimeframeChange={onTimeframeChange}
+                activeIndicators={activeIndicators}
                 onPinchStateChange={onPinchStateChange}
               />
             )}

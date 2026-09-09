@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from models.schemas import StockData, AIAnalysis, VoiceCommandRequest, VoiceCommandResponse, SentimentRequest, StockInsightsResponse
-from services.stock_service import get_stock_data, get_stock_insights
+from services.stock_service import get_stock_data, get_stock_insights, get_fundamental_metric
 from services.ai_service import process_voice_command
 from services.sentiment_service import analyze_sentiment
 
@@ -78,17 +78,16 @@ async def health_check():
 
 
 @app.get("/api/stock/{ticker}", response_model=StockData)
-async def get_stock(ticker: str):
+async def get_stock(ticker: str, timeframe: str = "3Mo"):
     """
     Fetch real-time stock data for a given ticker symbol.
 
-    Returns current price, market cap, PE ratio, EPS, and 1-month
-    daily price history for charting.
+    Returns current price, market cap, PE ratio, EPS, and daily price history for charting.
 
     **Examples:** AAPL, TSLA, RELIANCE.NS
     """
     try:
-        data = get_stock_data(ticker)
+        data = get_stock_data(ticker, timeframe)
         return data
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -97,6 +96,24 @@ async def get_stock(ticker: str):
         raise HTTPException(
             status_code=500,
             detail="Internal server error while fetching stock data.",
+        )
+
+
+@app.get("/api/stock/{ticker}/metric/{metric_id}")
+async def fetch_fundamental_metric(ticker: str, metric_id: str, timeframe: str = "1Yr"):
+    """
+    Fetch specific fundamental metric for 3D rendering.
+    """
+    try:
+        data = get_fundamental_metric(ticker, metric_id, timeframe)
+        return data
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error("Unexpected error fetching fundamental metric: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while fetching fundamental metric.",
         )
 
 

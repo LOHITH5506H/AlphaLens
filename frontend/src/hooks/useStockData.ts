@@ -12,7 +12,7 @@ interface UseStockDataReturn {
   data: StockData | null;
   loading: boolean;
   error: string | null;
-  fetch: (ticker: string) => Promise<StockData | null>;
+  fetch: (ticker: string, timeframe?: string) => Promise<StockData | null>;
   reset: () => void;
 }
 
@@ -21,11 +21,11 @@ export function useStockData(): UseStockDataReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async (ticker: string): Promise<StockData | null> => {
+  const fetchData = useCallback(async (ticker: string, timeframe: string = "3Mo"): Promise<StockData | null> => {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchStockData(ticker);
+      const result = await fetchStockData(ticker, timeframe);
       setData(result);
       return result;
     } catch (err) {

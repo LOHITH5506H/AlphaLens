@@ -3,14 +3,20 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
-import { Text, Float, Line } from "@react-three/drei";
-import type { StockData, AIAnalysis, StockInsights } from "@/types";
+import { Text, Float, Line, Billboard, Grid } from "@react-three/drei";
+import { useSpring, a } from "@react-spring/three";
+import type { StockData, AIAnalysis, StockInsights, FundamentalMetricResponse } from "@/types";
 
 interface Stock3DVisualsProps {
   data: StockData;
   aiAnalysis?: AIAnalysis | null;
   stockInsights?: StockInsights | null;
-  activeTab?: "Overview" | "Trader" | "Investor";
+  activeTab?: "Trader" | "Investor";
+  activeMetric?: string;
+  selectedMetricData?: FundamentalMetricResponse | null;
+  timeframe?: string;
+  onTimeframeChange?: (t: string) => void;
+  activeIndicators?: Record<string, boolean>;
   onPinchStateChange?: (isPinching: boolean) => void;
 }
 
@@ -407,8 +413,7 @@ function PredictionVisuals({ insights }: { insights: StockInsights }) {
 }
 
 // ── 5. OPTIONS Tab — Volatility Surface & Implied Chain ───────────────────
-function OptionsVisuals({ price, color, onPinchStateChange }: { price: number, color: string, onPinchStateChange?: (p: boolean) => void }) {
-  const geoRef = useRef<THREE.PlaneGeometry>(null);
+function OptionsVisuals({ price, color, onPinchStateChange }: { price: number; color: string; onPinchStateChange?: (p: boolean) => void }) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   const strikes = useMemo(() => {
@@ -418,22 +423,6 @@ function OptionsVisuals({ price, color, onPinchStateChange }: { price: number, c
     }
     return arr;
   }, [price]);
-
-  useEffect(() => {
-    if (geoRef.current) {
-      const pos = geoRef.current.attributes.position;
-      for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i);
-        const y = pos.getY(i);
-        // Volatility Smile and Term Structure simulation
-        const smile = (x * x) * 0.15;
-        const z = smile + Math.sin(x * 6 + y * 4) * 0.05;
-        pos.setZ(i, z);
-      }
-      pos.needsUpdate = true;
-      geoRef.current.computeVertexNormals();
-    }
-  }, []);
 
   useFrame(({ clock }) => {
     if (meshRef.current) {
@@ -451,7 +440,7 @@ function OptionsVisuals({ price, color, onPinchStateChange }: { price: number, c
       {/* Volatility Surface 3D Mesh */}
       <group position={[-0.8, -0.3, -0.2]}>
         <mesh ref={meshRef}>
-          <planeGeometry ref={geoRef} args={[2.5, 2.5, 32, 32]} />
+          <planeGeometry args={[2.5, 2.5, 32, 32]} />
           <meshBasicMaterial color={color} wireframe transparent opacity={0.4} blending={THREE.AdditiveBlending} />
         </mesh>
         <Text position={[0, 1.4, 0]} fontSize={0.1} color={color} anchorX="center">IMPLIED VOLATILITY (30D)</Text>
@@ -506,10 +495,501 @@ function OptionsVisuals({ price, color, onPinchStateChange }: { price: number, c
   );
 }
 
-// ── 6. Main Holographic Dashboard Component ────────────────────────────────
-export default function Stock3DVisuals({ data, aiAnalysis, stockInsights, activeTab = "Overview", onPinchStateChange }: Stock3DVisualsProps) {
+// ── 6. CanvasTextSprite ───────────────────────────────────────────────────
+function CanvasTextSprite({ text, color = "#ffffff", fontSize = 72, position = [0,0,0] as [number,number,number], scale = [1, 0.25, 1] as [number,number,number] }: any) {
+  const texture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "transparent";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = color;
+      ctx.font = `bold ${fontSize}px "Inter", sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, 256, 64);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  }, [text, color, fontSize]);
+
+  return (
+    <sprite position={position} scale={scale}>
+      <spriteMaterial map={texture} transparent opacity={0.9} depthTest={false} blending={THREE.AdditiveBlending} />
+    </sprite>
+  );
+}
+
+// ── 7. AxisBox3D & Templates ────────────────────────────────────────────────
+function AxisBox3D({ width, height, depth }: { width: number; height: number; depth: number }) {
+  return (
+    <group position={[0, -0.4, 0]}>
+      {/* Floor */}
+      <Grid
+        position={[0, 0, 0]}
+        args={[width, depth]}
+        cellSize={width / 8}
+        cellThickness={1}
+        cellColor="#1e293b"
+        sectionSize={width / 4}
+        sectionThickness={1.5}
+        sectionColor="#334155"
+        fadeDistance={width * 1.5}
+        rotation={[Math.PI / 2, 0, 0]}
+      />
+      {/* Back Wall */}
+      <Grid
+        position={[0, height / 2, -depth / 2]}
+        args={[width, height]}
+        cellSize={width / 8}
+        cellThickness={1}
+        cellColor="#1e293b"
+        sectionSize={width / 4}
+        sectionThickness={1.5}
+        sectionColor="#334155"
+        fadeDistance={width * 1.5}
+        rotation={[0, 0, 0]}
+      />
+      {/* Left Wall */}
+      <Grid
+        position={[-width / 2, height / 2, 0]}
+        args={[depth, height]}
+        cellSize={width / 8}
+        cellThickness={1}
+        cellColor="#1e293b"
+        sectionSize={width / 4}
+        sectionThickness={1.5}
+        sectionColor="#334155"
+        fadeDistance={width * 1.5}
+        rotation={[0, Math.PI / 2, 0]}
+      />
+    </group>
+  );
+}
+
+function QuarterlyFinancials3D({ financials }: { financials: any[] }) {
+  if (!financials || financials.length === 0) return null;
+  const W = 3.6;
+  const Z_SPAN = 1.2;
+  const pts = financials.length;
+  
+  const maxVal = Math.max(...financials.flatMap(f => [f.revenue || 0, f.gross_profit || 0, f.operating_income || 0]).map(Math.abs), 1);
+  
+  const metrics = [
+    { key: "revenue", name: "Revenue", color: "#38bdf8" },
+    { key: "gross_profit", name: "Gross Profit", color: "#10b981" },
+    { key: "operating_income", name: "Operating Income", color: "#8b5cf6" },
+  ];
+
+  return (
+    <group position={[0, -0.4, 0]}>
+      <Billboard position={[-1.7, 1.8, 0]}>
+        <Text fontSize={0.16} color="#00f0ff" anchorX="left">
+          ◈ QUARTERLY FINANCIALS (3D)
+        </Text>
+      </Billboard>
+      {metrics.map((m, zIdx) => {
+        const z = -Z_SPAN + (zIdx / (metrics.length - 1)) * Z_SPAN;
+        const isTarget = zIdx === metrics.length - 1; // Operating Income is in front and opaque
+        return (
+          <group key={m.key}>
+            <Billboard position={[-2.0, 0, z]}>
+               <Text fontSize={0.12} color={m.color} anchorX="right">{m.name}</Text>
+            </Billboard>
+            {financials.map((f, i) => {
+              const val = f[m.key] || 0;
+              const x = -W/2 + (i / Math.max(pts - 1, 1)) * W;
+              const h = Math.max((Math.abs(val) / maxVal) * 1.5, 0.05);
+              const yPos = val < 0 ? -h/2 : h/2;
+              return (
+                <ComparativeBar 
+                  key={i}
+                  x={x} yPos={yPos} z={z} h={h} 
+                  color={m.color} isTarget={isTarget} 
+                  name={m.name} value={val} label={f.quarter || f.date} 
+                />
+              );
+            })}
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+function ComparativeBar({ x, yPos, z, h, color, isTarget, name, value, label }: any) {
+  const props = useSpring({
+    position: [x, yPos, z] as [number, number, number],
+    scale: [0.3, h, 0.3] as [number, number, number],
+  });
+
+  return (
+    <a.group position={props.position}>
+      <a.mesh scale={props.scale}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial 
+          color={color} 
+          emissive={color} 
+          emissiveIntensity={isTarget ? 0.6 : 0.2}
+          transparent 
+          opacity={isTarget ? 0.95 : 0.6} 
+        />
+      </a.mesh>
+      <Billboard position={[0, value < 0 ? -h/2 - 0.2 : h/2 + 0.2, 0]}>
+         <Text fontSize={0.12} color={isTarget ? "#ffffff" : "#94a3b8"} anchorX="center">
+           {value.toFixed(2)}
+         </Text>
+      </Billboard>
+      {isTarget && (
+        <Billboard position={[0, value < 0 ? h/2 + 0.2 : -h/2 - 0.2, 0]}>
+          <Text fontSize={0.1} color="#64748b" anchorX="center">{label}</Text>
+        </Billboard>
+      )}
+    </a.group>
+  );
+}
+
+function ComparativeBarMatrix({ data }: { data: FundamentalMetricResponse }) {
+  const allValues = data.data.flatMap(d => d.values);
+  const maxVal = Math.max(...allValues.map(Math.abs), 0.01);
+  const pts = data.z_labels.length;
+  const W = 3.6;
+
+  return (
+    <group position={[0, -0.4, 0]}>
+      <Billboard position={[-1.7, 1.8, 0]}>
+        <Text fontSize={0.16} color="#00f0ff" anchorX="left">
+          ◈ {data.y_labels[0]}
+        </Text>
+      </Billboard>
+
+      {data.data.map((series, entityIdx) => {
+        const isTarget = entityIdx === 0;
+        const z = isTarget ? 0 : 0.8; // Sector in front
+        return (
+          <group key={series.name}>
+             <Billboard position={[-2.0, 0, z]}>
+               <Text fontSize={0.12} color={series.color} anchorX="right">{series.name}</Text>
+             </Billboard>
+            {series.values.map((v, timeIdx) => {
+              const h = Math.max((Math.abs(v) / maxVal) * 1.5, 0.05);
+              const x = -W/2 + (timeIdx / Math.max(pts - 1, 1)) * W;
+              const yPos = v < 0 ? -h/2 : h/2;
+
+              return (
+                <ComparativeBar 
+                  key={timeIdx}
+                  x={x} yPos={yPos} z={z} h={h} 
+                  color={series.color} isTarget={isTarget} 
+                  name={series.name} value={v} label={data.z_labels[timeIdx]} 
+                />
+              );
+            })}
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+function RiskPoint({ x, y, color, value, label }: any) {
+  const props = useSpring({ position: [x, y, 0] as [number, number, number] });
+  return (
+    <a.group position={props.position}>
+      <mesh>
+        <sphereGeometry args={[0.06, 16, 16]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.8} />
+      </mesh>
+      <Billboard position={[0, 0.25, 0]}>
+         <Text fontSize={0.12} color={color} anchorX="center">{value.toFixed(1)}</Text>
+      </Billboard>
+      <Billboard position={[0, -y - 0.2, 0]}>
+         <Text fontSize={0.1} color="#94a3b8" anchorX="center">{label}</Text>
+      </Billboard>
+    </a.group>
+  );
+}
+
+function RiskCorridor({ data }: { data: FundamentalMetricResponse }) {
+  const allValues = data.data.flatMap(d => d.values);
+  const maxVal = Math.max(...allValues.map(Math.abs), 0.01);
+  const pts = data.x_labels.length;
+  const W = 3.6;
+
+  const companySeries = data.data[0];
+  const limitSeries = data.data[1];
+
+  const linePoints = companySeries.values.map((v, i) => {
+    const x = -W/2 + (i / Math.max(pts - 1, 1)) * W;
+    const y = (v / maxVal) * 1.5;
+    return new THREE.Vector3(x, y, 0);
+  });
+  
+  const ceilingPoints = limitSeries.values.map((v, i) => {
+    const x = -W/2 + (i / Math.max(pts - 1, 1)) * W;
+    const y = (v / maxVal) * 1.5;
+    return new THREE.Vector3(x, y, 0);
+  });
+
+  return (
+    <group position={[0, -0.4, 0]}>
+      <Billboard position={[-1.7, 1.8, 0]}>
+        <Text fontSize={0.16} color="#00f0ff" anchorX="left">
+          ◈ {data.y_labels[0]} (Risk Corridor)
+        </Text>
+      </Billboard>
+
+      <Line points={ceilingPoints} color="#F87171" lineWidth={2} opacity={0.5} transparent />
+      <Line points={linePoints} color="#10B981" lineWidth={4} />
+      
+      {companySeries.values.map((v, i) => {
+        const limit = limitSeries.values[i];
+        const isBreached = v > limit;
+        const x = -W/2 + (i / Math.max(pts - 1, 1)) * W;
+        const y = (v / maxVal) * 1.5;
+        const c = isBreached ? "#EF4444" : "#10B981";
+        
+        return <RiskPoint key={i} x={x} y={y} color={c} value={v} label={data.x_labels[i]} />
+      })}
+    </group>
+  );
+}
+
+function TerrainBlock({ x, yPos, z, h, w, color, isBase, value, label }: any) {
+  const props = useSpring({
+    position: [x, yPos, z] as [number, number, number],
+    scale: [w, h, 0.2] as [number, number, number],
+  });
+  return (
+    <a.group position={props.position}>
+      <a.mesh scale={props.scale}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.3} transparent opacity={0.8} />
+      </a.mesh>
+      {isBase && (
+        <Billboard position={[0, value < 0 ? h/2 + 0.2 : -h/2 - 0.2, 0]}>
+          <Text fontSize={0.1} color="#94a3b8" anchorX="center">{label}</Text>
+        </Billboard>
+      )}
+    </a.group>
+  );
+}
+
+function ComponentTerrain({ data }: { data: FundamentalMetricResponse }) {
+  const allValues = data.data.flatMap(d => d.values);
+  const maxVal = Math.max(...allValues.map(Math.abs), 0.01);
+  const pts = data.x_labels.length;
+  const W = 3.6;
+  const Z_SPAN = 1.5;
+
+  return (
+    <group position={[0, -0.4, 0]}>
+      <Billboard position={[-1.7, 1.5, 0]}>
+        <Text fontSize={0.16} color="#00f0ff" anchorX="left">
+          ◈ {data.y_labels[0]} Breakdown
+        </Text>
+      </Billboard>
+
+      {data.data.map((series, compIdx) => {
+        const z = (compIdx / Math.max(data.data.length - 1, 1)) * -Z_SPAN;
+        
+        return (
+          <group key={series.name}>
+             <Billboard position={[-W/2 - 0.2, 0, z]}>
+               <Text fontSize={0.1} color={series.color} anchorX="right">{series.name}</Text>
+             </Billboard>
+             {series.values.map((v, i) => {
+                const absV = Math.abs(v);
+                const h = Math.max((absV / maxVal) * 1.5, 0.05);
+                const isNeg = v < 0;
+                const x = -W/2 + (i / Math.max(pts - 1, 1)) * W;
+                const yPos = isNeg ? -h/2 : h/2;
+                
+                return <TerrainBlock key={i} x={x} yPos={yPos} z={z} h={h} w={W / pts * 0.6} color={series.color} isBase={compIdx === 0} value={v} label={data.x_labels[i]} />
+             })}
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+function FundamentalMetric3D({ data }: { data: FundamentalMetricResponse }) {
+  if (data.template_type === "comparative_bar") return <ComparativeBarMatrix data={data} />;
+  if (data.template_type === "risk_corridor") return <RiskCorridor data={data} />;
+  if (data.template_type === "component_terrain") return <ComponentTerrain data={data} />;
+  return null;
+}
+
+// ── 8. CandlestickVisuals ─────────────────────────────────────────────────
+function CandlestickVisuals({ candlesticks, activeIndicators }: { candlesticks: any[], activeIndicators?: Record<string, boolean> }) {
+  const pts = candlesticks.slice(-40); // last 40 days
+  const minLow = Math.min(...pts.map(c => c.low));
+  const maxHigh = Math.max(...pts.map(c => c.high));
+  const range = Math.max(maxHigh - minLow, 0.01);
+  const mid = (maxHigh + minLow) / 2;
+  const W = 3.6;
+
+  // Simple Moving Average
+  const smaPoints = useMemo(() => {
+    return pts.map((c, i) => {
+      const x = -W/2 + (i / Math.max(pts.length - 1, 1)) * W;
+      // Mock SMA value closely tracking close
+      const val = (c.close + c.open) / 2;
+      const y = ((val - mid) / range) * 1.8;
+      return new THREE.Vector3(x, y, 0.1);
+    });
+  }, [pts, mid, range, W]);
+
+  const smaCurve = useMemo(() => new THREE.CatmullRomCurve3(smaPoints), [smaPoints]);
+
+  // Bollinger Bands Mock
+  const upperBands = useMemo(() => {
+    return pts.map((c, i) => {
+      const x = -W/2 + (i / Math.max(pts.length - 1, 1)) * W;
+      const val = c.high + range * 0.1; // mock std dev offset
+      return new THREE.Vector3(x, ((val - mid) / range) * 1.8, 0.05);
+    });
+  }, [pts, mid, range, W]);
+
+  const lowerBands = useMemo(() => {
+    return pts.map((c, i) => {
+      const x = -W/2 + (i / Math.max(pts.length - 1, 1)) * W;
+      const val = c.low - range * 0.1;
+      return new THREE.Vector3(x, ((val - mid) / range) * 1.8, 0.05);
+    });
+  }, [pts, mid, range, W]);
+
+  return (
+    <group position={[0, 0, 0]}>
+      {pts.map((c, i) => {
+        const x = -W/2 + (i / Math.max(pts.length - 1, 1)) * W;
+        const isBull = c.close >= c.open;
+        const color = isBull ? "#10B981" : "#EF4444";
+        
+        const openY = ((c.open - mid) / range) * 1.8;
+        const closeY = ((c.close - mid) / range) * 1.8;
+        const highY = ((c.high - mid) / range) * 1.8;
+        const lowY = ((c.low - mid) / range) * 1.8;
+        
+        const bodyH = Math.max(Math.abs(closeY - openY), 0.02);
+        const bodyY = (openY + closeY) / 2;
+        
+        const wickH = highY - lowY;
+        const wickY = (highY + lowY) / 2;
+        
+        return (
+          <group key={i} position={[x, 0, 0]}>
+            {/* Body */}
+            <mesh position={[0, bodyY, 0.05]}>
+              <boxGeometry args={[0.06, bodyH, 0.06]} />
+              <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} />
+            </mesh>
+            {/* Wick */}
+            <mesh position={[0, wickY, 0.05]}>
+              <cylinderGeometry args={[0.01, 0.01, wickH, 4]} />
+              <meshStandardMaterial color={color} />
+            </mesh>
+            {/* Time labels every 10 points - Billboarded for clarity */}
+            {i % 10 === 0 && (
+              <Billboard position={[0, -1.2, 0]}>
+                <Text fontSize={0.1} color="#94a3b8" anchorX="center">
+                  {c.date.substring(5, 10)}
+                </Text>
+              </Billboard>
+            )}
+          </group>
+        );
+      })}
+
+      {activeIndicators?.sma && (
+        <mesh position={[0, 0, 0.1]}>
+          <tubeGeometry args={[smaCurve, 64, 0.02, 8, false]} />
+          <meshStandardMaterial color="#fcd34d" emissive="#fcd34d" emissiveIntensity={1} />
+        </mesh>
+      )}
+
+      {activeIndicators?.bollinger && (
+        <group position={[0, 0, 0.1]}>
+          <Line points={upperBands} color="#38bdf8" lineWidth={2} opacity={0.6} transparent />
+          <Line points={lowerBands} color="#38bdf8" lineWidth={2} opacity={0.6} transparent />
+        </group>
+      )}
+
+      {activeIndicators?.macd && (
+        <group position={[0, -1.6, 0]}>
+          <Billboard position={[-1.7, 0, 0]}>
+             <Text fontSize={0.12} color="#f472b6" anchorX="left">MACD</Text>
+          </Billboard>
+          {pts.map((c, i) => {
+            // Mock MACD Histogram
+            const x = -W/2 + (i / Math.max(pts.length - 1, 1)) * W;
+            const wave = Math.sin(i * 0.5) * 0.3;
+            const h = Math.abs(wave);
+            const y = wave > 0 ? h/2 : -h/2;
+            const color = wave > 0 ? "#34D399" : "#F87171";
+            return (
+              <mesh key={i} position={[x, y, 0.05]}>
+                <boxGeometry args={[0.04, h, 0.04]} />
+                <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} />
+              </mesh>
+            );
+          })}
+        </group>
+      )}
+    </group>
+  );
+}
+
+// ── 9. TimeframeSelector3D ────────────────────────────────────────────────
+function TimeframeSelector3D({ active, onChange }: { active?: string; onChange?: (t: string) => void }) {
+  const timeframes = ["1M", "6M", "1Yr", "3Yr", "5Yr", "10Yr", "Max"];
+  return (
+    <group position={[0, -1.8, 0.4]}>
+      {timeframes.map((tf, i) => {
+        const isActive = active === tf;
+        const color = isActive ? "#38bdf8" : "#94a3b8";
+        return (
+          <group key={tf} position={[(i - 3) * 0.45, 0, 0]} onClick={(e) => { e.stopPropagation(); onChange?.(tf); }}>
+            <mesh>
+              <boxGeometry args={[0.35, 0.2, 0.05]} />
+              <meshStandardMaterial color={isActive ? "#0284c7" : "#1e293b"} emissive={isActive ? "#0284c7" : "#000000"} emissiveIntensity={isActive ? 0.3 : 0} />
+            </mesh>
+            <Text position={[0, 0, 0.03]} fontSize={0.08} color={color} anchorX="center" anchorY="middle">
+              {tf}
+            </Text>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+// ── 10. Main Default Export ────────────────────────────────────────────────
+export default function Stock3DVisuals({
+  data,
+  aiAnalysis,
+  stockInsights,
+  activeTab = "Trader",
+  activeMetric = "INTRADAY",
+  selectedMetricData,
+  timeframe,
+  onTimeframeChange,
+  activeIndicators,
+  onPinchStateChange,
+}: Stock3DVisualsProps) {
   const coreRef = useRef<THREE.Group>(null);
   const mainGroupRef = useRef<THREE.Group>(null);
+
+  const peData = useMemo(() => [
+    { name: "AAPL", pe: [28, 30, 32, 35.8], color: "#ff007f", zOffset: -0.6 },
+    { name: "MSFT", pe: [31, 33, 34, 36.2], color: "#00f0ff", zOffset: -0.2 },
+    { name: "GOOGL", pe: [22, 24, 25, 26.5], color: "#7000ff", zOffset: 0.2 },
+    { name: "SECTOR", pe: [25, 26, 27, 28.0], color: "#ffffff", zOffset: 0.6 },
+  ], []);
 
   // Safe data fallbacks
   const symbol = data?.symbol || "TSLA";
@@ -663,83 +1143,71 @@ export default function Stock3DVisuals({ data, aiAnalysis, stockInsights, active
 
         {/* ── 4. Main Holographic Content Zone ── */}
 
-        {/* 1. OVERVIEW: Intraday Volumetric Trajectory (CatmullRom Ribbon) */}
-        <group visible={activeTab === "Overview" || activeTab === undefined}>
-          <group position={[0, -0.2, 0.1]}>
-            <Text position={[-1.7, 1.0, 0]} fontSize={0.16} color={holoColor} anchorX="left">
-              ◈ INTRADAY_VOLUMETRIC_TRAJECTORY
-            </Text>
+        {/* Global Grid & Timeframes */}
+        <AxisBox3D width={4.2} height={2.5} depth={2.5} />
+        <TimeframeSelector3D active={timeframe} onChange={onTimeframeChange} />
 
-            <Line points={ribbonPoints} color={holoColor} lineWidth={4} transparent opacity={1} />
-            <Line
-              points={ribbonPoints.map(([x, y, z]) => [x, y - 0.1, z - 0.15])}
-              color={holoColorAlt}
-              lineWidth={1.5}
-              transparent
-              opacity={0.4}
-            />
-
-            {[
-              { label: "OPEN", val: open, x: -1.4 },
-              { label: "HIGH", val: high, x: -0.5 },
-              { label: "LOW", val: low, x: 0.5 },
-              { label: "LIVE", val: price, x: 1.4 },
-            ].map((col, i) => {
-              const h = Math.max(((col.val - low) / (high - low || 1)) * 1.1, 0.15);
-              return (
-                <group key={i} position={[col.x, -0.6 + h / 2, 0]}>
-                  <mesh>
-                    <cylinderGeometry args={[0.04, 0.04, h, 16]} />
-                    <meshBasicMaterial
-                      color={holoColor}
-                      wireframe
-                      transparent
-                      opacity={0.8}
-                      blending={THREE.AdditiveBlending}
-                    />
-                  </mesh>
-                  <Text position={[0, -h / 2 - 0.18, 0]} fontSize={0.12} color="#94a3b8">
-                    {col.label}
-                  </Text>
-                  <Text position={[0, h / 2 + 0.14, 0]} fontSize={0.11} color="#ffffff">
-                    {`$${col.val.toFixed(1)}`}
-                  </Text>
-                </group>
-              );
-            })}
-          </group>
+        {/* 1. INVESTOR TAB: Fundamental Metrics & LSTM Forecast */}
+        <group visible={activeTab === "Investor" || activeTab === undefined}>
+          {selectedMetricData ? (
+             <FundamentalMetric3D data={selectedMetricData} />
+          ) : activeMetric === "INTRADAY" || activeMetric === "MARKET_CAP" || activeMetric === "DAY_RANGE" ? (
+            <QuarterlyFinancials3D financials={data.financials || []} />
+          ) : activeMetric === "VOLUME" ? (
+            <group position={[0, -0.2, 0.1]}>
+              <Text position={[-1.7, 1.0, 0]} fontSize={0.16} color={holoColor} anchorX="left">
+                ◈ VOLUME_PROFILE_MATRIX
+              </Text>
+              <group position={[0, -0.6, 0]}>
+                {Array.from({ length: 8 }).map((_, x) =>
+                  Array.from({ length: 5 }).map((_, z) => {
+                    const height = Math.sin(x * 0.5) * Math.cos(z * 0.8) * 1.0 + 0.8;
+                    const isBuy = (x + z) % 2 === 0;
+                    const c = isBuy ? "#00ffcc" : "#ff0055";
+                    return (
+                      <mesh key={`${x}-${z}`} position={[(x - 3.5) * 0.4, height / 2, (z - 2) * 0.4]}>
+                        <cylinderGeometry args={[0.15, 0.15, height, 16]} />
+                        <meshStandardMaterial color={c} emissive={c} emissiveIntensity={0.5} />
+                      </mesh>
+                    );
+                  })
+                )}
+              </group>
+            </group>
+          ) : (
+            <group position={[0, -0.2, 0.2]}>
+              <Text position={[0, 1.1, 0]} fontSize={0.16} color={sentimentDisplay.color} anchorX="center">
+                FINBERT_NEURAL_SYNAPSE
+              </Text>
+              <group ref={coreRef} position={[0, 0.2, 0]}>
+                <mesh>
+                  <icosahedronGeometry args={[0.55, 1]} />
+                  <meshBasicMaterial color={sentimentDisplay.color} wireframe transparent opacity={0.65} blending={THREE.AdditiveBlending} />
+                </mesh>
+                <mesh>
+                  <sphereGeometry args={[0.3, 16, 16]} />
+                  <meshBasicMaterial color="#ffffff" transparent opacity={0.4} blending={THREE.AdditiveBlending} />
+                </mesh>
+              </group>
+              <group position={[0, 0.2, 0]}>
+                <GyroRing radius={0.85} tube={0.015} speed={0.8} axis="z" color={sentimentDisplay.color} opacity={0.7} />
+                <GyroRing radius={1.05} tube={0.01} speed={-0.6} axis="y" color={sentimentDisplay.colorAlt} opacity={0.5} />
+                <GyroRing radius={1.2} tube={0.008} speed={0.4} axis="x" color="#ffffff" opacity={0.3} />
+              </group>
+              <Text position={[0, -0.85, 0]} fontSize={0.24} color="#ffffff" anchorX="center" anchorY="middle">
+                {`${sentimentDisplay.score.toFixed(0)}% [${sentimentDisplay.label}]`}
+              </Text>
+            </group>
+          )}
         </group>
 
-        {/* 2. TRADER: Options Volatility Surface */}
+        {/* 2. TRADER TAB */}
         <group visible={activeTab === "Trader"}>
-          <OptionsVisuals price={price} color={holoColor} onPinchStateChange={onPinchStateChange} />
-        </group>
-
-        {/* 3. INVESTOR: AI Orb */}
-        <group visible={activeTab === "Investor"}>
-          <group position={[0, -0.2, 0.2]}>
-            <Text position={[0, 1.1, 0]} fontSize={0.16} color={sentimentDisplay.color} anchorX="center">
-              FINBERT_NEURAL_SYNAPSE
-            </Text>
-            <group ref={coreRef} position={[0, 0.2, 0]}>
-              <mesh>
-                <icosahedronGeometry args={[0.55, 1]} />
-                <meshBasicMaterial color={sentimentDisplay.color} wireframe transparent opacity={0.65} blending={THREE.AdditiveBlending} />
-              </mesh>
-              <mesh>
-                <sphereGeometry args={[0.3, 16, 16]} />
-                <meshBasicMaterial color="#ffffff" transparent opacity={0.4} blending={THREE.AdditiveBlending} />
-              </mesh>
-            </group>
-            <group position={[0, 0.2, 0]}>
-              <GyroRing radius={0.85} tube={0.015} speed={0.8} axis="z" color={sentimentDisplay.color} opacity={0.7} />
-              <GyroRing radius={1.05} tube={0.01} speed={-0.6} axis="y" color={sentimentDisplay.colorAlt} opacity={0.5} />
-              <GyroRing radius={1.2} tube={0.008} speed={0.4} axis="x" color="#ffffff" opacity={0.3} />
-            </group>
-            <Text position={[0, -0.85, 0]} fontSize={0.24} color="#ffffff" anchorX="center" anchorY="middle">
-              {`${sentimentDisplay.score.toFixed(0)}% [${sentimentDisplay.label}]`}
-            </Text>
-          </group>
+          {data.candlesticks && data.candlesticks.length > 0 ? (
+            <CandlestickVisuals candlesticks={data.candlesticks} activeIndicators={activeIndicators} />
+          ) : (
+            <OptionsVisuals price={price} color={holoColor} onPinchStateChange={onPinchStateChange} />
+          )}
         </group>
 
       </group>

@@ -8,8 +8,8 @@ import type { StockData, AIAnalysis, VoiceCommandResponse, StockInsights } from 
 /**
  * Fetch stock data for a given ticker.
  */
-export async function fetchStockData(ticker: string): Promise<StockData> {
-  const res = await fetch(`${API_BASE_URL}/api/stock/${encodeURIComponent(ticker)}`);
+export async function fetchStockData(ticker: string, timeframe: string = "3Mo"): Promise<StockData> {
+  const res = await fetch(`${API_BASE_URL}/api/stock/${encodeURIComponent(ticker)}?timeframe=${timeframe}`);
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Unknown error" }));
     throw new Error(error.detail || `Failed to fetch stock data (${res.status})`);

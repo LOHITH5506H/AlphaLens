@@ -130,3 +130,17 @@ export interface StockInsights {
   sentiment_label: 'BULLISH' | 'NEUTRAL' | 'BEARISH';
   prediction_dates: string[];       // ISO date strings
 }
+
+export interface MetricDataSeries {
+  name: string;
+  values: number[];
+  color: string;
+}
+
+export interface FundamentalMetricResponse {
+  template_type: "comparative_bar" | "component_terrain" | "risk_corridor";
+  x_labels: string[];
+  y_labels: string[];
+  z_labels: string[];
+  data: MetricDataSeries[];
+}
