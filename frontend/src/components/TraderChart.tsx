@@ -10,6 +10,20 @@ interface TraderChartProps {
   volumeProfile?: VolumeProfileBin[] | null;
 }
 
+/**
+ * lightweight-charts expects either "yyyy-mm-dd" strings (daily) or
+ * Unix timestamps in seconds (intraday). Our backend sends
+ * "2026-09-03 13:30" for 15m/1h candles, which we must convert.
+ */
+function parseTime(dateStr: string): string | number {
+  if (dateStr.includes(" ")) {
+    // Intraday: convert to Unix timestamp (seconds)
+    return Math.floor(new Date(dateStr).getTime() / 1000);
+  }
+  // Daily: pass through as yyyy-mm-dd string
+  return dateStr;
+}
+
 export default function TraderChart({ candlesticks, technicals, volumeProfile }: TraderChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [activeIndicator, setActiveIndicator] = useState<"RSI" | "MACD" | "VPVR">("VPVR");
@@ -54,7 +68,7 @@ export default function TraderChart({ candlesticks, technicals, volumeProfile }:
     });
     candleSeries.setData(
       candlesticks.map((c) => ({
-        time: c.date as any,
+        time: parseTime(c.date) as any,
         open: c.open,
         high: c.high,
         low: c.low,
@@ -72,7 +86,7 @@ export default function TraderChart({ candlesticks, technicals, volumeProfile }:
       candlesticks
         .filter((c) => c.vwap !== null && c.vwap !== undefined)
         .map((c) => ({
-          time: c.date as any,
+          time: parseTime(c.date) as any,
           value: c.vwap!,
         }))
     );
@@ -91,7 +105,7 @@ export default function TraderChart({ candlesticks, technicals, volumeProfile }:
     });
     volumeSeries.setData(
       candlesticks.map((c) => ({
-        time: c.date as any,
+        time: parseTime(c.date) as any,
         value: c.volume,
         color: c.close >= c.open ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)",
       }))

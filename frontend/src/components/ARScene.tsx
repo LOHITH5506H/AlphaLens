@@ -292,8 +292,33 @@ export default function ARScene({
           // In manual mode, hide camera when dark theme is selected
           opacity: isManualMode ? (showArBackground ? 1 : 0) : 1,
           transition: "opacity 0.4s ease",
+          transform: "scaleX(-1)", // Mirror camera feed
         }}
       />
+
+      {status === "initializing" && (
+        <div style={{
+          position: "absolute", top: 0, left: 0, width: "100vw", height: "100vh",
+          display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center",
+          background: "radial-gradient(circle at center, #1e293b 0%, #0a0f1a 100%)",
+          color: "#00f0ff", zIndex: 30,
+        }}>
+          <div style={{
+            width: "60px", height: "60px", border: "3px solid rgba(0, 240, 255, 0.2)",
+            borderTopColor: "#00f0ff", borderRadius: "50%", animation: "spin 1s linear infinite"
+          }} />
+          <h2 style={{ letterSpacing: "0.2em", fontSize: "14px", fontWeight: "bold", marginTop: "20px" }}>
+            INITIALIZING AR ENGINE...
+          </h2>
+          <style>
+            {`
+              @keyframes spin {
+                to { transform: rotate(360deg); }
+              }
+            `}
+          </style>
+        </div>
+      )}
 
       {status === "ready" && (
         <div
@@ -323,9 +348,9 @@ export default function ARScene({
               <>
                 <PerspectiveCamera makeDefault position={[0, 0, 3.5]} fov={50} />
                 <OrbitControls
-                  enablePan={false}
-                  maxPolarAngle={Math.PI / 1.5}
-                  minPolarAngle={Math.PI / 4}
+                  enablePan={true}
+                  enableRotate={true}
+                  enableZoom={true}
                   enableDamping
                   dampingFactor={0.05}
                 />

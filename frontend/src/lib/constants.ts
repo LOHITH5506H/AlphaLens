@@ -65,3 +65,30 @@ export function formatVolume(vol: number | null): string {
   if (vol >= 1e3) return `${(vol / 1e3).toFixed(1)}K`;
   return vol.toLocaleString();
 }
+
+export const METRIC_TIMEFRAMES: Record<string, string[]> = {
+  // 1. VALUATION METRICS (Changes daily with stock price)
+  'PE_RATIO':       ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y', 'Max'],
+  'PB_RATIO':       ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y', 'Max'],
+  'PEG_RATIO':      ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y', 'Max'],
+  'DIVIDEND_YIELD': ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y', 'Max'],
+
+  // 2. ACCOUNTING METRICS (Strictly 10-Q / 10-K Filings)
+  'ROE':            ['1Y', '3Y', '5Y', '10Y'],
+  'ROA':            ['1Y', '3Y', '5Y', '10Y'],
+  'EBITDA_MARGIN':  ['1Y', '3Y', '5Y', '10Y'],
+  'NET_MARGIN':     ['1Y', '3Y', '5Y', '10Y'],
+  'FCF':            ['1Y', '3Y', '5Y', '10Y'],
+  'DEBT_EQUITY':    ['1Y', '3Y', '5Y', '10Y'],
+  'NET_INTEREST_MARGIN': ['1Y', '3Y', '5Y', '10Y'],
+
+  // 3. ADVANCED 3D MODELS (Point-in-Time)
+  'DUPONT_TREE':    [],
+  'WATERFALL':      [],
+  'PEER_SCATTER':   [],
+  'DCF_TERRAIN':    [],
+
+  // 4. TRADER / TECHNICAL METRICS
+  'INTRADAY':       ['1D', '1W', '1M', '3M', '6M', '1Y', '3Y', '5Y', 'Max'],
+  'VPVR':           ['1W', '1M', '3M', '6M', '1Y']
+};

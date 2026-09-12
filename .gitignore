@@ -25,3 +25,4 @@ Thumbs.db
 
 # Ignore local AI models
 backend/models/finbert/
+backend/models/model.safetensors

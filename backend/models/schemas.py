@@ -103,3 +103,9 @@ class VoiceCommandResponse(BaseSchema):
     intent: Optional[str] = None
     message: str
     data: Optional[Dict[str, Any]] = None
+
+class VisualizationPayload(BaseSchema):
+    type: str
+    axes: Dict[str, str]
+    dimensions: Dict[str, Any]
+    error: Optional[str] = None

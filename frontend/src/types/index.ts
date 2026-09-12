@@ -144,3 +144,10 @@ export interface FundamentalMetricResponse {
   z_labels: string[];
   data: MetricDataSeries[];
 }
+
+export interface VisualizationPayload {
+  type: string;
+  axes: Record<string, string>;
+  dimensions: Record<string, any>;
+  error?: string | null;
+}

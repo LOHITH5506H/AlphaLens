@@ -12,6 +12,7 @@ import { useSpeech } from "@/hooks/useSpeech";
 import { useHandTracking } from "@/hooks/useHandTracking";
 import HandCursor from "@/components/HandCursor";
 import { sendVoiceCommand, searchTicker } from "@/lib/api";
+import { METRIC_TIMEFRAMES } from "@/lib/constants";
 import type { FundamentalMetricResponse } from "@/types";
 
 // Dynamically import ARScene with SSR disabled (needs browser APIs)
@@ -135,7 +136,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!activeTicker) return;
-    const basicMetrics = ["INTRADAY", "VOLUME", "MARKET_CAP", "DAY_RANGE"];
+    const basicMetrics = ["INTRADAY", "VOLUME", "MARKET_CAP", "DAY_RANGE", "VPVR", "DUPONT_TREE", "WATERFALL", "PEER_SCATTER", "DCF_TERRAIN"];
     if (basicMetrics.includes(activeMetric)) {
       setSelectedMetricData(null);
       return;
@@ -147,6 +148,13 @@ export default function HomePage() {
       })
       .catch(e => console.error("Error fetching metric:", e));
   }, [activeTicker, activeMetric, timeframe]);
+
+  useEffect(() => {
+    const validTimeframes = METRIC_TIMEFRAMES[activeMetric || 'INTRADAY'] || [];
+    if (validTimeframes.length > 0 && !validTimeframes.includes(timeframe)) {
+        setTimeframe(validTimeframes[0]); 
+    }
+  }, [activeMetric, timeframe]);
 
   const handleManualScan = useCallback(async (query: string) => {
     const cleanQuery = query.trim();
@@ -377,6 +385,7 @@ export default function HomePage() {
               highlightedStats={highlightedStats}
               voiceMessage={voiceMessage}
               activeTab={activeTab}
+              activeMetric={activeMetric}
               activeIndicators={activeIndicators}
               onTabChange={setActiveTab}
               onSelectMetric={setActiveMetric}

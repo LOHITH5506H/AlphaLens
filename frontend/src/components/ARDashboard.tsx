@@ -27,6 +27,7 @@ interface ARDashboardProps {
   highlightedStats?: string[];
   voiceMessage?: string | null;
   activeTab: "Trader" | "Investor";
+  activeMetric?: string;
   onTabChange: (tab: "Trader" | "Investor") => void;
   onSelectMetric?: (metric: string) => void;
   activeIndicators?: Record<string, boolean>;
@@ -42,6 +43,7 @@ export default function ARDashboard({
   highlightedStats,
   voiceMessage,
   activeTab,
+  activeMetric,
   activeIndicators,
   onTabChange,
   onSelectMetric,
@@ -173,6 +175,23 @@ export default function ARDashboard({
               </button>
             ))}
           </div>
+          <div className="flex gap-2 mb-1 overflow-x-auto pb-1">
+            {[
+              { id: "VPVR", label: "VPVR" },
+            ].map(viz => (
+              <button 
+                key={viz.id}
+                onClick={() => onSelectMetric?.(activeMetric === viz.id ? "INTRADAY" : viz.id)}
+                className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                  activeMetric === viz.id
+                    ? "bg-blue-500/20 text-blue-400 border-blue-500/50"
+                    : "bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-700/50"
+                }`}
+              >
+                {viz.label}
+              </button>
+            ))}
+          </div>
           <div className="glass-card-sm flex-1 p-2 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner relative overflow-hidden">
             {stockData.candlesticks && stockData.candlesticks.length > 0 ? (
               <TraderChart 
@@ -216,6 +235,57 @@ export default function ARDashboard({
                   {m.label}
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div className="glass-card-sm p-3 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner">
+            <h3 className="text-xs font-semibold text-slate-400 mb-3 tracking-wider">
+                ADVANCED MODELS (3D)
+            </h3>
+            <div className="grid grid-cols-2 gap-2">
+                <button 
+                    onClick={() => onSelectMetric?.('DUPONT_TREE')} 
+                    className={`p-2 rounded border text-sm transition-all ${
+                        activeMetric === 'DUPONT_TREE' 
+                        ? 'bg-cyan-900/40 border-cyan-400 text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.3)]' 
+                        : 'bg-slate-800/50 border-slate-700 text-slate-300 hover:border-cyan-500/50'
+                    }`}
+                >
+                    DuPont Tree
+                </button>
+                
+                <button 
+                    onClick={() => onSelectMetric?.('WATERFALL')} 
+                    className={`p-2 rounded border text-sm transition-all ${
+                        activeMetric === 'WATERFALL' 
+                        ? 'bg-cyan-900/40 border-cyan-400 text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.3)]' 
+                        : 'bg-slate-800/50 border-slate-700 text-slate-300 hover:border-cyan-500/50'
+                    }`}
+                >
+                    Rev-to-FCF
+                </button>
+                
+                <button 
+                    onClick={() => onSelectMetric?.('PEER_SCATTER')} 
+                    className={`p-2 rounded border text-sm transition-all ${
+                        activeMetric === 'PEER_SCATTER' 
+                        ? 'bg-cyan-900/40 border-cyan-400 text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.3)]' 
+                        : 'bg-slate-800/50 border-slate-700 text-slate-300 hover:border-cyan-500/50'
+                    }`}
+                >
+                    Peer Scatter
+                </button>
+
+                <button 
+                    onClick={() => onSelectMetric?.('DCF_TERRAIN')} 
+                    className={`p-2 rounded border text-sm transition-all ${
+                        activeMetric === 'DCF_TERRAIN' 
+                        ? 'bg-cyan-900/40 border-cyan-400 text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.3)]' 
+                        : 'bg-slate-800/50 border-slate-700 text-slate-300 hover:border-cyan-500/50'
+                    }`}
+                >
+                    DCF Terrain
+                </button>
             </div>
           </div>
           

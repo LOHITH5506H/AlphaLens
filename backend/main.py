@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from models.schemas import StockData, AIAnalysis, VoiceCommandRequest, VoiceCommandResponse, SentimentRequest, StockInsightsResponse
+from models.schemas import StockData, AIAnalysis, VoiceCommandRequest, VoiceCommandResponse, SentimentRequest, StockInsightsResponse, VisualizationPayload
 from services.stock_service import get_stock_data, get_stock_insights, get_fundamental_metric
 from services.ai_service import process_voice_command
 from services.sentiment_service import analyze_sentiment
@@ -229,6 +229,25 @@ async def handle_voice_command(request: VoiceCommandRequest):
         raise HTTPException(
             status_code=500,
             detail="Error processing voice command.",
+        )
+
+
+@app.get("/api/visualization/{ticker}", response_model=VisualizationPayload)
+async def fetch_visualization(ticker: str, type: str, peers: str = ""):
+    """
+    Fetch data for complex 3D visualizations (Fundamental and Technical).
+    """
+    from services.stock_service import get_visualization_data
+    try:
+        data = get_visualization_data(ticker.upper(), type, peers)
+        return data
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Visualization error for {ticker} ({type}): {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while fetching visualization data.",
         )
 
 

@@ -3,7 +3,7 @@
  */
 
 import { API_BASE_URL } from "./constants";
-import type { StockData, AIAnalysis, VoiceCommandResponse, StockInsights } from "@/types";
+import type { StockData, AIAnalysis, VoiceCommandResponse, StockInsights, VisualizationPayload } from "@/types";
 
 /**
  * Fetch stock data for a given ticker.
@@ -101,6 +101,27 @@ export async function sendVoiceCommand(
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Unknown error" }));
     throw new Error(error.detail || `Voice command failed (${res.status})`);
+  }
+  return res.json();
+}
+
+/**
+ * Fetch 3D visualization data.
+ */
+export async function fetchVisualizationData(
+  ticker: string,
+  type: string,
+  peers: string = ""
+): Promise<VisualizationPayload> {
+  const url = new URL(`${API_BASE_URL}/api/visualization/${encodeURIComponent(ticker)}`);
+  url.searchParams.append("type", type);
+  if (peers) {
+    url.searchParams.append("peers", peers);
+  }
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Unknown error" }));
+    throw new Error(error.detail || `Failed to fetch visualization data (${res.status})`);
   }
   return res.json();
 }

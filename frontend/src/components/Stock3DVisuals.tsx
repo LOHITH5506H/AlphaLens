@@ -6,6 +6,9 @@ import { useFrame } from "@react-three/fiber";
 import { Text, Float, Line, Billboard, Grid } from "@react-three/drei";
 import { useSpring, a } from "@react-spring/three";
 import type { StockData, AIAnalysis, StockInsights, FundamentalMetricResponse } from "@/types";
+import { VPVRWallWithData, DuPontTreeWithData, WaterfallChartWithData, PeerScatterCloudWithData, DCFTerrainWithData } from "./Visualizations3D";
+import ExternalComparativeBar from "./ComparativeBar";
+import { METRIC_TIMEFRAMES } from "@/lib/constants";
 
 interface Stock3DVisualsProps {
   data: StockData;
@@ -525,49 +528,7 @@ function CanvasTextSprite({ text, color = "#ffffff", fontSize = 72, position = [
 
 // ── 7. AxisBox3D & Templates ────────────────────────────────────────────────
 function AxisBox3D({ width, height, depth }: { width: number; height: number; depth: number }) {
-  return (
-    <group position={[0, -0.4, 0]}>
-      {/* Floor */}
-      <Grid
-        position={[0, 0, 0]}
-        args={[width, depth]}
-        cellSize={width / 8}
-        cellThickness={1}
-        cellColor="#1e293b"
-        sectionSize={width / 4}
-        sectionThickness={1.5}
-        sectionColor="#334155"
-        fadeDistance={width * 1.5}
-        rotation={[Math.PI / 2, 0, 0]}
-      />
-      {/* Back Wall */}
-      <Grid
-        position={[0, height / 2, -depth / 2]}
-        args={[width, height]}
-        cellSize={width / 8}
-        cellThickness={1}
-        cellColor="#1e293b"
-        sectionSize={width / 4}
-        sectionThickness={1.5}
-        sectionColor="#334155"
-        fadeDistance={width * 1.5}
-        rotation={[0, 0, 0]}
-      />
-      {/* Left Wall */}
-      <Grid
-        position={[-width / 2, height / 2, 0]}
-        args={[depth, height]}
-        cellSize={width / 8}
-        cellThickness={1}
-        cellColor="#1e293b"
-        sectionSize={width / 4}
-        sectionThickness={1.5}
-        sectionColor="#334155"
-        fadeDistance={width * 1.5}
-        rotation={[0, Math.PI / 2, 0]}
-      />
-    </group>
-  );
+  return null; // Nuked the grid to remove visual clutter
 }
 
 function QuarterlyFinancials3D({ financials }: { financials: any[] }) {
@@ -945,15 +906,19 @@ function CandlestickVisuals({ candlesticks, activeIndicators }: { candlesticks: 
 }
 
 // ── 9. TimeframeSelector3D ────────────────────────────────────────────────
-function TimeframeSelector3D({ active, onChange }: { active?: string; onChange?: (t: string) => void }) {
-  const timeframes = ["1M", "6M", "1Yr", "3Yr", "5Yr", "10Yr", "Max"];
+function TimeframeSelector3D({ active, onChange, activeMetric }: { active?: string; onChange?: (t: string) => void, activeMetric?: string }) {
+  const timeframes = METRIC_TIMEFRAMES[activeMetric || 'INTRADAY'] || [];
+
+  if (timeframes.length === 0) return null;
+
   return (
     <group position={[0, -1.8, 0.4]}>
       {timeframes.map((tf, i) => {
-        const isActive = active === tf;
+        const isActive = active === tf || (active === '1Yr' && tf === '1Y');
         const color = isActive ? "#38bdf8" : "#94a3b8";
+        const offset = (timeframes.length - 1) / 2;
         return (
-          <group key={tf} position={[(i - 3) * 0.45, 0, 0]} onClick={(e) => { e.stopPropagation(); onChange?.(tf); }}>
+          <group key={tf} position={[(i - offset) * 0.45, 0, 0]} onClick={(e) => { e.stopPropagation(); onChange?.(tf); }}>
             <mesh>
               <boxGeometry args={[0.35, 0.2, 0.05]} />
               <meshStandardMaterial color={isActive ? "#0284c7" : "#1e293b"} emissive={isActive ? "#0284c7" : "#000000"} emissiveIntensity={isActive ? 0.3 : 0} />
@@ -1145,70 +1110,87 @@ export default function Stock3DVisuals({
 
         {/* Global Grid & Timeframes */}
         <AxisBox3D width={4.2} height={2.5} depth={2.5} />
-        <TimeframeSelector3D active={timeframe} onChange={onTimeframeChange} />
+        <TimeframeSelector3D active={timeframe} onChange={onTimeframeChange} activeMetric={activeMetric} />
 
-        {/* 1. INVESTOR TAB: Fundamental Metrics & LSTM Forecast */}
-        <group visible={activeTab === "Investor" || activeTab === undefined}>
-          {selectedMetricData ? (
-             <FundamentalMetric3D data={selectedMetricData} />
-          ) : activeMetric === "INTRADAY" || activeMetric === "MARKET_CAP" || activeMetric === "DAY_RANGE" ? (
-            <QuarterlyFinancials3D financials={data.financials || []} />
-          ) : activeMetric === "VOLUME" ? (
-            <group position={[0, -0.2, 0.1]}>
-              <Text position={[-1.7, 1.0, 0]} fontSize={0.16} color={holoColor} anchorX="left">
-                ◈ VOLUME_PROFILE_MATRIX
-              </Text>
-              <group position={[0, -0.6, 0]}>
-                {Array.from({ length: 8 }).map((_, x) =>
-                  Array.from({ length: 5 }).map((_, z) => {
-                    const height = Math.sin(x * 0.5) * Math.cos(z * 0.8) * 1.0 + 0.8;
-                    const isBuy = (x + z) % 2 === 0;
-                    const c = isBuy ? "#00ffcc" : "#ff0055";
-                    return (
-                      <mesh key={`${x}-${z}`} position={[(x - 3.5) * 0.4, height / 2, (z - 2) * 0.4]}>
-                        <cylinderGeometry args={[0.15, 0.15, height, 16]} />
-                        <meshStandardMaterial color={c} emissive={c} emissiveIntensity={0.5} />
-                      </mesh>
-                    );
-                  })
+        {/* STRICT SINGLE VISUALIZATION RENDERER */}
+        {activeTab === "Trader" ? (
+            <group>
+                {data.candlesticks && data.candlesticks.length > 0 ? (
+                    <>
+                        <CandlestickVisuals candlesticks={data.candlesticks} activeIndicators={activeIndicators} />
+                        {activeMetric === "VPVR" && (() => {
+                            const pts = data.candlesticks.slice(-40);
+                            const minLow = Math.min(...pts.map((c: any) => c.low));
+                            const maxHigh = Math.max(...pts.map((c: any) => c.high));
+                            return <VPVRWallWithData ticker={data.symbol} candleMinPrice={minLow} candleMaxPrice={maxHigh} />;
+                        })()}
+                    </>
+                ) : (
+                    <OptionsVisuals price={price} color={holoColor} onPinchStateChange={onPinchStateChange} />
                 )}
-              </group>
             </group>
-          ) : (
-            <group position={[0, -0.2, 0.2]}>
-              <Text position={[0, 1.1, 0]} fontSize={0.16} color={sentimentDisplay.color} anchorX="center">
-                FINBERT_NEURAL_SYNAPSE
-              </Text>
-              <group ref={coreRef} position={[0, 0.2, 0]}>
-                <mesh>
-                  <icosahedronGeometry args={[0.55, 1]} />
-                  <meshBasicMaterial color={sentimentDisplay.color} wireframe transparent opacity={0.65} blending={THREE.AdditiveBlending} />
-                </mesh>
-                <mesh>
-                  <sphereGeometry args={[0.3, 16, 16]} />
-                  <meshBasicMaterial color="#ffffff" transparent opacity={0.4} blending={THREE.AdditiveBlending} />
-                </mesh>
-              </group>
-              <group position={[0, 0.2, 0]}>
-                <GyroRing radius={0.85} tube={0.015} speed={0.8} axis="z" color={sentimentDisplay.color} opacity={0.7} />
-                <GyroRing radius={1.05} tube={0.01} speed={-0.6} axis="y" color={sentimentDisplay.colorAlt} opacity={0.5} />
-                <GyroRing radius={1.2} tube={0.008} speed={0.4} axis="x" color="#ffffff" opacity={0.3} />
-              </group>
-              <Text position={[0, -0.85, 0]} fontSize={0.24} color="#ffffff" anchorX="center" anchorY="middle">
-                {`${sentimentDisplay.score.toFixed(0)}% [${sentimentDisplay.label}]`}
-              </Text>
+        ) : (
+            <group>
+                {activeMetric === 'DUPONT_TREE' ? (
+                    <DuPontTreeWithData ticker={data.symbol} />
+                ) : activeMetric === 'WATERFALL' ? (
+                    <WaterfallChartWithData ticker={data.symbol} />
+                ) : activeMetric === 'PEER_SCATTER' ? (
+                    <PeerScatterCloudWithData ticker={data.symbol} />
+                ) : activeMetric === 'DCF_TERRAIN' ? (
+                    <DCFTerrainWithData ticker={data.symbol} />
+                ) : selectedMetricData ? (
+                    <ExternalComparativeBar data={selectedMetricData} metricName={activeMetric} timeframe={timeframe} />
+                ) : activeMetric === "INTRADAY" || activeMetric === "MARKET_CAP" || activeMetric === "DAY_RANGE" ? (
+                    <QuarterlyFinancials3D financials={data.financials || []} />
+                ) : activeMetric === "VOLUME" ? (
+                    <group position={[0, -0.2, 0.1]}>
+                      <Text position={[-1.7, 1.0, 0]} fontSize={0.16} color={holoColor} anchorX="left">
+                        ◈ VOLUME_PROFILE_MATRIX
+                      </Text>
+                      <group position={[0, -0.6, 0]}>
+                        {Array.from({ length: 8 }).map((_, x) =>
+                          Array.from({ length: 5 }).map((_, z) => {
+                            const height = Math.sin(x * 0.5) * Math.cos(z * 0.8) * 1.0 + 0.8;
+                            const isBuy = (x + z) % 2 === 0;
+                            const c = isBuy ? "#00ffcc" : "#ff0055";
+                            return (
+                              <mesh key={`${x}-${z}`} position={[(x - 3.5) * 0.4, height / 2, (z - 2) * 0.4]}>
+                                <cylinderGeometry args={[0.15, 0.15, height, 16]} />
+                                <meshStandardMaterial color={c} emissive={c} emissiveIntensity={0.5} />
+                              </mesh>
+                            );
+                          })
+                        )}
+                      </group>
+                    </group>
+                ) : (
+                    <group position={[0, -0.2, 0.2]}>
+                      <Text position={[0, 1.1, 0]} fontSize={0.16} color={sentimentDisplay.color} anchorX="center">
+                        FINBERT_NEURAL_SYNAPSE
+                      </Text>
+                      <group ref={coreRef} position={[0, 0.2, 0]}>
+                        <mesh>
+                          <icosahedronGeometry args={[0.55, 1]} />
+                          <meshBasicMaterial color={sentimentDisplay.color} wireframe transparent opacity={0.65} blending={THREE.AdditiveBlending} />
+                        </mesh>
+                        <mesh>
+                          <sphereGeometry args={[0.3, 16, 16]} />
+                          <meshBasicMaterial color="#ffffff" transparent opacity={0.4} blending={THREE.AdditiveBlending} />
+                        </mesh>
+                      </group>
+                      <group position={[0, 0.2, 0]}>
+                        <GyroRing radius={0.85} tube={0.015} speed={0.8} axis="z" color={sentimentDisplay.color} opacity={0.7} />
+                        <GyroRing radius={1.05} tube={0.01} speed={-0.6} axis="y" color={sentimentDisplay.colorAlt} opacity={0.5} />
+                        <GyroRing radius={1.2} tube={0.008} speed={0.4} axis="x" color="#ffffff" opacity={0.3} />
+                      </group>
+                      <Text position={[0, -0.85, 0]} fontSize={0.24} color="#ffffff" anchorX="center" anchorY="middle">
+                        {`${sentimentDisplay.score.toFixed(0)}% [${sentimentDisplay.label}]`}
+                      </Text>
+                    </group>
+                )}
             </group>
-          )}
-        </group>
-
-        {/* 2. TRADER TAB */}
-        <group visible={activeTab === "Trader"}>
-          {data.candlesticks && data.candlesticks.length > 0 ? (
-            <CandlestickVisuals candlesticks={data.candlesticks} activeIndicators={activeIndicators} />
-          ) : (
-            <OptionsVisuals price={price} color={holoColor} onPinchStateChange={onPinchStateChange} />
-          )}
-        </group>
+        )}
 
       </group>
     </Float>
