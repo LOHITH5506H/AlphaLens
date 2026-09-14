@@ -67,11 +67,11 @@ export function formatVolume(vol: number | null): string {
 }
 
 export const METRIC_TIMEFRAMES: Record<string, string[]> = {
-  // 1. VALUATION METRICS (Changes daily with stock price)
-  'PE_RATIO':       ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y', 'Max'],
-  'PB_RATIO':       ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y', 'Max'],
-  'PEG_RATIO':      ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y', 'Max'],
-  'DIVIDEND_YIELD': ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y', 'Max'],
+  // 1. VALUATION METRICS (Quarterly reporting intervals)
+  'PE_RATIO':       ['1Y', '3Y', '5Y', '10Y', 'Max'],
+  'PB_RATIO':       ['1Y', '3Y', '5Y', '10Y', 'Max'],
+  'PEG_RATIO':      ['1Y', '3Y', '5Y', '10Y', 'Max'],
+  'DIVIDEND_YIELD': ['1Y', '3Y', '5Y', '10Y', 'Max'],
 
   // 2. ACCOUNTING METRICS (Strictly 10-Q / 10-K Filings)
   'ROE':            ['1Y', '3Y', '5Y', '10Y'],
@@ -88,7 +88,10 @@ export const METRIC_TIMEFRAMES: Record<string, string[]> = {
   'PEER_SCATTER':   [],
   'DCF_TERRAIN':    [],
 
-  // 4. TRADER / TECHNICAL METRICS
+  // 4. TRADER / TECHNICAL METRICS (Continuous trading intervals)
   'INTRADAY':       ['1D', '1W', '1M', '3M', '6M', '1Y', '3Y', '5Y', 'Max'],
-  'VPVR':           ['1W', '1M', '3M', '6M', '1Y']
+  'VPVR':           ['1W', '1M', '3M', '6M', '1Y'],
+
+  // 5. DEFAULT QUARTERLY FINANCIALS (Investor tab overview)
+  'QUARTERLY':      ['1Y', '2Y', '3Y', '5Y', 'All'],
 };

@@ -254,6 +254,9 @@ export function PeerScatterCloud({ data, ticker }: { data: any, ticker: string }
 
   return (
     <group>
+      {/* Ground Reference Grid */}
+      <gridHelper args={[4, 8, '#0284c7', '#1e293b']} position={[0, -2, 0]} />
+
       {peers.map((p: any, i: number) => {
         const x = norm(p.pe, minPE, maxPE);
         const y = norm(p.roe, minROE, maxROE);
@@ -264,6 +267,9 @@ export function PeerScatterCloud({ data, ticker }: { data: any, ticker: string }
         const emissiveIntensity = isTarget ? 1.2 : 0;
         const opacity = isTarget ? 1 : 0.6;
 
+        // Drop line height from peer node to grid floor
+        const dropHeight = y - (-2);
+
         return (
           <group key={p.ticker} position={[x, y, z]}>
             <mesh>
@@ -273,6 +279,15 @@ export function PeerScatterCloud({ data, ticker }: { data: any, ticker: string }
             <Billboard position={[0, 0.3, 0]}>
               <Text fontSize={0.12} color={isTarget ? "#ffffff" : "#cbd5e1"}>{p.ticker}</Text>
             </Billboard>
+
+            {/* Vertical Reference Drop Line to Grid Floor */}
+            <Line
+              points={[[0, 0, 0], [0, -dropHeight, 0]]}
+              color="#334155"
+              lineWidth={1}
+              transparent
+              opacity={0.5}
+            />
           </group>
         );
       })}
@@ -281,8 +296,11 @@ export function PeerScatterCloud({ data, ticker }: { data: any, ticker: string }
       <Line points={[[-2, -2, 0], [2, -2, 0]]} color="#334155" />
       <Line points={[[-2, -2, 0], [-2, 2, 0]]} color="#334155" />
       <Line points={[[-2, -2, -2], [-2, -2, 2]]} color="#334155" />
-      <Billboard position={[0, -2.2, 0]}><Text fontSize={0.1} color="#64748b">P/E (X)</Text></Billboard>
-      <Billboard position={[-2.2, 0, 0]}><Text fontSize={0.1} color="#64748b">ROE (Y)</Text></Billboard>
+
+      {/* Labeled Axes */}
+      <Billboard position={[0, -2.4, 0]}><Text fontSize={0.12} color="#38bdf8">P/E Ratio (X) →</Text></Billboard>
+      <Billboard position={[-2.5, 0, 0]}><Text fontSize={0.12} color="#38bdf8">↑ ROE (Y)</Text></Billboard>
+      <Billboard position={[0, -2.4, 2.3]}><Text fontSize={0.12} color="#38bdf8">Revenue Growth (Z) →</Text></Billboard>
     </group>
   );
 }
@@ -352,12 +370,20 @@ export function DCFTerrain({ data }: { data: any }) {
       {/* Intersection Plane at Current Price (Gotcha 3 handled here) */}
       <mesh position={[0, normalizedCurrentPriceY, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[4, 4]} />
-        <meshStandardMaterial color="#ef4444" transparent opacity={0.2} depthWrite={false} side={THREE.DoubleSide} />
+        <meshStandardMaterial color="#ef4444" transparent opacity={0.45} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
       
       {/* Label for Current Price Plane */}
-      <Billboard position={[2.2, normalizedCurrentPriceY, 0]}>
-        <Text fontSize={0.12} color="#ffffff">Current P: ${current_price.toFixed(2)}</Text>
+      <Billboard position={[2.3, normalizedCurrentPriceY + 0.15, 0]}>
+        <Text fontSize={0.14} color="#fca5a5">Current Price: ${current_price.toFixed(2)}</Text>
+      </Billboard>
+
+      {/* Axis Annotations */}
+      <Billboard position={[0, -2.5, 2.3]}>
+        <Text fontSize={0.13} color="#94a3b8">Discount Rate / WACC (%) →</Text>
+      </Billboard>
+      <Billboard position={[-2.5, -2.5, 0]}>
+        <Text fontSize={0.13} color="#94a3b8">← Terminal Growth Rate (%)</Text>
       </Billboard>
     </group>
   );

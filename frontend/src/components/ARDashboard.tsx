@@ -213,6 +213,14 @@ export default function ARDashboard({
         <div className="flex-col gap-3 flex flex-1">
           <div className="glass-card-sm p-3 border border-slate-700/50 rounded-xl bg-slate-900/50 shadow-inner">
             <div className="text-xs font-bold text-slate-400 mb-3">FUNDAMENTAL METRICS (3D)</div>
+            {activeMetric && activeMetric !== 'INTRADAY' && activeMetric !== 'MARKET_CAP' && activeMetric !== 'DAY_RANGE' && activeMetric !== 'VOLUME' && (
+              <button
+                onClick={() => onSelectMetric?.('INTRADAY')}
+                className="w-full mb-3 py-1.5 px-3 rounded-lg border border-cyan-500/40 bg-cyan-500/10 text-cyan-400 text-xs font-semibold hover:bg-cyan-500/20 transition-all flex items-center justify-center gap-2"
+              >
+                ← Back to Quarterly Overview
+              </button>
+            )}
             <div className="grid grid-cols-2 gap-2">
               {[
                 { id: "PE_RATIO", label: "P/E Ratio", color: "bg-blue-500/10 text-blue-400" },
@@ -230,7 +238,11 @@ export default function ARDashboard({
                 <button
                   key={m.id}
                   onClick={() => onSelectMetric?.(m.id)}
-                  className={`p-2 text-xs font-semibold rounded-lg border border-slate-700/50 hover:border-slate-500 transition-colors ${m.color}`}
+                  className={`p-2 text-xs font-semibold rounded-lg border transition-colors ${
+                    activeMetric === m.id
+                      ? 'bg-cyan-900/40 border-cyan-400 text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.3)]'
+                      : `${m.color} border-slate-700/50 hover:border-slate-500`
+                  }`}
                 >
                   {m.label}
                 </button>

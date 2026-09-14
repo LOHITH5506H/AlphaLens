@@ -21,6 +21,7 @@ interface ARSceneProps {
   aiError?: string | null;
   stockInsights?: StockInsights | null;
   isManualMode?: boolean;
+  stockLoading?: boolean;
   activeTab?: "Trader" | "Investor";
   activeMetric?: string;
   selectedMetricData?: FundamentalMetricResponse | null;
@@ -37,7 +38,7 @@ interface ARSceneProps {
 // ARTracker — Bridges MindAR computer vision ↔ R3F scene graph
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis, stockInsights, activeTab, activeMetric, selectedMetricData, timeframe, onTimeframeChange, activeIndicators, onPinchStateChange }: any) => {
+const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis, stockInsights, activeTab, activeMetric, selectedMetricData, timeframe, onTimeframeChange, activeIndicators, onPinchStateChange, stockLoading }: any) => {
   const { camera } = useThree();
   const groupRef = useRef<THREE.Group>(null);
 
@@ -66,7 +67,7 @@ const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis, stockInsigh
   return (
     <group ref={groupRef} matrixAutoUpdate={false} visible={true}>
       <group rotation={[Math.PI / 2, 0, 0]} scale={[1.2, 1.2, 1.2]}>
-        <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} activeMetric={activeMetric} selectedMetricData={selectedMetricData} timeframe={timeframe} onTimeframeChange={onTimeframeChange} activeIndicators={activeIndicators} onPinchStateChange={onPinchStateChange} />
+        <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} activeMetric={activeMetric} selectedMetricData={selectedMetricData} timeframe={timeframe} onTimeframeChange={onTimeframeChange} activeIndicators={activeIndicators} onPinchStateChange={onPinchStateChange} isLoading={stockLoading} />
       </group>
     </group>
   );
@@ -132,6 +133,7 @@ export default function ARScene({
   onTargetFound,
   onTargetLost,
   isManualMode,
+  stockLoading,
   onClose,
 }: ARSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -355,7 +357,7 @@ export default function ARScene({
                   dampingFactor={0.05}
                 />
                 <Center>
-                  <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} activeMetric={activeMetric} selectedMetricData={selectedMetricData} timeframe={timeframe} onTimeframeChange={onTimeframeChange} activeIndicators={activeIndicators} onPinchStateChange={onPinchStateChange} />
+                  <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} activeMetric={activeMetric} selectedMetricData={selectedMetricData} timeframe={timeframe} onTimeframeChange={onTimeframeChange} activeIndicators={activeIndicators} onPinchStateChange={onPinchStateChange} isLoading={stockLoading} />
                 </Center>
               </>
             ) : (
@@ -372,15 +374,16 @@ export default function ARScene({
                 onTimeframeChange={onTimeframeChange}
                 activeIndicators={activeIndicators}
                 onPinchStateChange={onPinchStateChange}
+                stockLoading={stockLoading}
               />
             )}
 
             {/* Selective Bloom post-processing for neon glow effects */}
             <EffectComposer>
               <Bloom
-                intensity={1.6}
-                luminanceThreshold={0.45}
-                luminanceSmoothing={0.9}
+                intensity={1.1}
+                luminanceThreshold={0.82}
+                luminanceSmoothing={0.2}
                 radius={0.65}
               />
             </EffectComposer>

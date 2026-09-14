@@ -73,6 +73,7 @@ export default function HomePage() {
     macd: false
   });
   const [selectedMetricData, setSelectedMetricData] = useState<FundamentalMetricResponse | null>(null);
+  const [metricLoading, setMetricLoading] = useState(false);
   const [isPinching, setIsPinching] = useState(false);
   const [isHandTrackingEnabled, setIsHandTrackingEnabled] = useState(false);
 
@@ -139,14 +140,18 @@ export default function HomePage() {
     const basicMetrics = ["INTRADAY", "VOLUME", "MARKET_CAP", "DAY_RANGE", "VPVR", "DUPONT_TREE", "WATERFALL", "PEER_SCATTER", "DCF_TERRAIN"];
     if (basicMetrics.includes(activeMetric)) {
       setSelectedMetricData(null);
+      setMetricLoading(false);
       return;
     }
+    setSelectedMetricData(null);
+    setMetricLoading(true);
     fetch(`http://localhost:8000/api/stock/${activeTicker}/metric/${activeMetric}?timeframe=${timeframe}`)
       .then(r => r.json())
       .then(data => {
         if (!data.detail) setSelectedMetricData(data);
       })
-      .catch(e => console.error("Error fetching metric:", e));
+      .catch(e => console.error("Error fetching metric:", e))
+      .finally(() => setMetricLoading(false));
   }, [activeTicker, activeMetric, timeframe]);
 
   useEffect(() => {
@@ -351,6 +356,7 @@ export default function HomePage() {
           aiError={aiAnalysis.error}
           stockInsights={stockInsights.insights}
           isManualMode={isManual}
+          stockLoading={stockData.loading || metricLoading}
           activeTab={activeTab}
           activeMetric={activeMetric}
           selectedMetricData={selectedMetricData}
@@ -388,11 +394,25 @@ export default function HomePage() {
               activeMetric={activeMetric}
               activeIndicators={activeIndicators}
               onTabChange={setActiveTab}
-              onSelectMetric={setActiveMetric}
+              onSelectMetric={(metric: string) => {
+                setActiveMetric(prev => prev === metric ? "INTRADAY" : metric);
+              }}
               onToggleIndicator={(indicator: string) => {
                 setActiveIndicators(prev => ({...prev, [indicator]: !prev[indicator]}));
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Full-viewport Loading Overlay — Suppresses premature 3D render */}
+      {((stockData.loading && !stockData.data) || metricLoading) && showDashboard && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm transition-opacity duration-300 pointer-events-none">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-3 border-cyan-500/20 border-t-cyan-400 rounded-full animate-spin" />
+            <div className="text-sm font-semibold text-cyan-400 tracking-widest uppercase">
+              {metricLoading ? "Loading metric data..." : "Fetching spatial market intelligence..."}
+            </div>
           </div>
         </div>
       )}

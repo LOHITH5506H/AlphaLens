@@ -10,6 +10,27 @@ import { VPVRWallWithData, DuPontTreeWithData, WaterfallChartWithData, PeerScatt
 import ExternalComparativeBar from "./ComparativeBar";
 import { METRIC_TIMEFRAMES } from "@/lib/constants";
 
+// ── Formatting Helpers ─────────────────────────────────────────────────────
+function formatCurrencyCompact(val: number): string {
+  if (val === undefined || val === null) return "$0";
+  const abs = Math.abs(val);
+  const sign = val < 0 ? "-" : "";
+  if (abs >= 1e12) return `${sign}$${(abs / 1e12).toFixed(1)}T`;
+  if (abs >= 1e9)  return `${sign}$${(abs / 1e9).toFixed(1)}B`;
+  if (abs >= 1e6)  return `${sign}$${(abs / 1e6).toFixed(1)}M`;
+  if (abs >= 1e3)  return `${sign}$${(abs / 1e3).toFixed(1)}K`;
+  return `${sign}$${abs.toFixed(2)}`;
+}
+
+function formatQuarterLabel(dateStr: string): string {
+  if (!dateStr) return dateStr;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const quarter = Math.floor(d.getMonth() / 3) + 1;
+  const yearShort = d.getFullYear().toString().slice(-2);
+  return `Q${quarter} '${yearShort}`;
+}
+
 interface Stock3DVisualsProps {
   data: StockData;
   aiAnalysis?: AIAnalysis | null;
@@ -21,6 +42,7 @@ interface Stock3DVisualsProps {
   onTimeframeChange?: (t: string) => void;
   activeIndicators?: Record<string, boolean>;
   onPinchStateChange?: (isPinching: boolean) => void;
+  isLoading?: boolean;
 }
 
 // ── 1. Sci-Fi Gyroscopic Rotating HUD Ring ─────────────────────────────────
@@ -531,13 +553,24 @@ function AxisBox3D({ width, height, depth }: { width: number; height: number; de
   return null; // Nuked the grid to remove visual clutter
 }
 
-function QuarterlyFinancials3D({ financials }: { financials: any[] }) {
+function QuarterlyFinancials3D({ financials, timeframe }: { financials: any[]; timeframe?: string }) {
   if (!financials || financials.length === 0) return null;
+
+  // Slice data based on selected timeframe
+  const getVisibleQuarters = (data: any[], tf: string) => {
+    const countMap: Record<string, number> = {
+      '1Y': 4, '2Y': 8, '3Y': 12, '5Y': 20, 'All': data.length,
+    };
+    const count = countMap[tf] || 4;
+    return data.slice(-count);
+  };
+
+  const visibleFinancials = getVisibleQuarters(financials, timeframe || '1Y');
   const W = 3.6;
   const Z_SPAN = 1.2;
-  const pts = financials.length;
+  const pts = visibleFinancials.length;
   
-  const maxVal = Math.max(...financials.flatMap(f => [f.revenue || 0, f.gross_profit || 0, f.operating_income || 0]).map(Math.abs), 1);
+  const maxVal = Math.max(...visibleFinancials.flatMap(f => [f.revenue || 0, f.gross_profit || 0, f.operating_income || 0]).map(Math.abs), 1);
   
   const metrics = [
     { key: "revenue", name: "Revenue", color: "#38bdf8" },
@@ -560,17 +593,18 @@ function QuarterlyFinancials3D({ financials }: { financials: any[] }) {
             <Billboard position={[-2.0, 0, z]}>
                <Text fontSize={0.12} color={m.color} anchorX="right">{m.name}</Text>
             </Billboard>
-            {financials.map((f, i) => {
+            {visibleFinancials.map((f, i) => {
               const val = f[m.key] || 0;
               const x = -W/2 + (i / Math.max(pts - 1, 1)) * W;
               const h = Math.max((Math.abs(val) / maxVal) * 1.5, 0.05);
               const yPos = val < 0 ? -h/2 : h/2;
+              const dateLabel = formatQuarterLabel(f.quarter || f.date || '');
               return (
-                <ComparativeBar 
+                <InternalComparativeBar 
                   key={i}
                   x={x} yPos={yPos} z={z} h={h} 
                   color={m.color} isTarget={isTarget} 
-                  name={m.name} value={val} label={f.quarter || f.date} 
+                  name={m.name} value={val} label={dateLabel} 
                 />
               );
             })}
@@ -581,7 +615,7 @@ function QuarterlyFinancials3D({ financials }: { financials: any[] }) {
   );
 }
 
-function ComparativeBar({ x, yPos, z, h, color, isTarget, name, value, label }: any) {
+function InternalComparativeBar({ x, yPos, z, h, color, isTarget, name, value, label }: any) {
   const props = useSpring({
     position: [x, yPos, z] as [number, number, number],
     scale: [0.3, h, 0.3] as [number, number, number],
@@ -601,7 +635,7 @@ function ComparativeBar({ x, yPos, z, h, color, isTarget, name, value, label }: 
       </a.mesh>
       <Billboard position={[0, value < 0 ? -h/2 - 0.2 : h/2 + 0.2, 0]}>
          <Text fontSize={0.12} color={isTarget ? "#ffffff" : "#94a3b8"} anchorX="center">
-           {value.toFixed(2)}
+           {formatCurrencyCompact(value)}
          </Text>
       </Billboard>
       {isTarget && (
@@ -641,7 +675,7 @@ function ComparativeBarMatrix({ data }: { data: FundamentalMetricResponse }) {
               const yPos = v < 0 ? -h/2 : h/2;
 
               return (
-                <ComparativeBar 
+                <InternalComparativeBar 
                   key={timeIdx}
                   x={x} yPos={yPos} z={z} h={h} 
                   color={series.color} isTarget={isTarget} 
@@ -945,6 +979,7 @@ export default function Stock3DVisuals({
   onTimeframeChange,
   activeIndicators,
   onPinchStateChange,
+  isLoading,
 }: Stock3DVisualsProps) {
   const coreRef = useRef<THREE.Group>(null);
   const mainGroupRef = useRef<THREE.Group>(null);
@@ -1108,9 +1143,17 @@ export default function Stock3DVisuals({
 
         {/* ── 4. Main Holographic Content Zone ── */}
 
-        {/* Global Grid & Timeframes */}
+        {/* Global Grid & Timeframes — contextual to active view */}
         <AxisBox3D width={4.2} height={2.5} depth={2.5} />
-        <TimeframeSelector3D active={timeframe} onChange={onTimeframeChange} activeMetric={activeMetric} />
+        {(() => {
+          // Determine which timeframe key to use for the selector
+          const isDefaultInvestorView = activeTab === 'Investor' && 
+            ['INTRADAY', 'MARKET_CAP', 'DAY_RANGE'].includes(activeMetric);
+          const tfKey = isDefaultInvestorView ? 'QUARTERLY' : activeMetric || 'INTRADAY';
+          const tfOptions = METRIC_TIMEFRAMES[tfKey] || [];
+          if (tfOptions.length === 0) return null;
+          return <TimeframeSelector3D active={timeframe} onChange={onTimeframeChange} activeMetric={tfKey} />;
+        })()}
 
         {/* STRICT SINGLE VISUALIZATION RENDERER */}
         {activeTab === "Trader" ? (
@@ -1131,63 +1174,67 @@ export default function Stock3DVisuals({
             </group>
         ) : (
             <group>
-                {activeMetric === 'DUPONT_TREE' ? (
-                    <DuPontTreeWithData ticker={data.symbol} />
-                ) : activeMetric === 'WATERFALL' ? (
-                    <WaterfallChartWithData ticker={data.symbol} />
-                ) : activeMetric === 'PEER_SCATTER' ? (
-                    <PeerScatterCloudWithData ticker={data.symbol} />
-                ) : activeMetric === 'DCF_TERRAIN' ? (
-                    <DCFTerrainWithData ticker={data.symbol} />
-                ) : selectedMetricData ? (
-                    <ExternalComparativeBar data={selectedMetricData} metricName={activeMetric} timeframe={timeframe} />
-                ) : activeMetric === "INTRADAY" || activeMetric === "MARKET_CAP" || activeMetric === "DAY_RANGE" ? (
-                    <QuarterlyFinancials3D financials={data.financials || []} />
-                ) : activeMetric === "VOLUME" ? (
-                    <group position={[0, -0.2, 0.1]}>
-                      <Text position={[-1.7, 1.0, 0]} fontSize={0.16} color={holoColor} anchorX="left">
-                        ◈ VOLUME_PROFILE_MATRIX
-                      </Text>
-                      <group position={[0, -0.6, 0]}>
-                        {Array.from({ length: 8 }).map((_, x) =>
-                          Array.from({ length: 5 }).map((_, z) => {
-                            const height = Math.sin(x * 0.5) * Math.cos(z * 0.8) * 1.0 + 0.8;
-                            const isBuy = (x + z) % 2 === 0;
-                            const c = isBuy ? "#00ffcc" : "#ff0055";
-                            return (
-                              <mesh key={`${x}-${z}`} position={[(x - 3.5) * 0.4, height / 2, (z - 2) * 0.4]}>
-                                <cylinderGeometry args={[0.15, 0.15, height, 16]} />
-                                <meshStandardMaterial color={c} emissive={c} emissiveIntensity={0.5} />
-                              </mesh>
-                            );
-                          })
-                        )}
-                      </group>
-                    </group>
-                ) : (
-                    <group position={[0, -0.2, 0.2]}>
-                      <Text position={[0, 1.1, 0]} fontSize={0.16} color={sentimentDisplay.color} anchorX="center">
-                        FINBERT_NEURAL_SYNAPSE
-                      </Text>
-                      <group ref={coreRef} position={[0, 0.2, 0]}>
-                        <mesh>
-                          <icosahedronGeometry args={[0.55, 1]} />
-                          <meshBasicMaterial color={sentimentDisplay.color} wireframe transparent opacity={0.65} blending={THREE.AdditiveBlending} />
-                        </mesh>
-                        <mesh>
-                          <sphereGeometry args={[0.3, 16, 16]} />
-                          <meshBasicMaterial color="#ffffff" transparent opacity={0.4} blending={THREE.AdditiveBlending} />
-                        </mesh>
-                      </group>
-                      <group position={[0, 0.2, 0]}>
-                        <GyroRing radius={0.85} tube={0.015} speed={0.8} axis="z" color={sentimentDisplay.color} opacity={0.7} />
-                        <GyroRing radius={1.05} tube={0.01} speed={-0.6} axis="y" color={sentimentDisplay.colorAlt} opacity={0.5} />
-                        <GyroRing radius={1.2} tube={0.008} speed={0.4} axis="x" color="#ffffff" opacity={0.3} />
-                      </group>
-                      <Text position={[0, -0.85, 0]} fontSize={0.24} color="#ffffff" anchorX="center" anchorY="middle">
-                        {`${sentimentDisplay.score.toFixed(0)}% [${sentimentDisplay.label}]`}
-                      </Text>
-                    </group>
+                {isLoading ? null : (
+                  <>
+                    {activeMetric === 'DUPONT_TREE' ? (
+                        <DuPontTreeWithData ticker={data.symbol} />
+                    ) : activeMetric === 'WATERFALL' ? (
+                        <WaterfallChartWithData ticker={data.symbol} />
+                    ) : activeMetric === 'PEER_SCATTER' ? (
+                        <PeerScatterCloudWithData ticker={data.symbol} />
+                    ) : activeMetric === 'DCF_TERRAIN' ? (
+                        <DCFTerrainWithData ticker={data.symbol} />
+                    ) : selectedMetricData ? (
+                        <ExternalComparativeBar data={selectedMetricData} metricName={activeMetric} timeframe={timeframe} />
+                    ) : activeMetric === "INTRADAY" || activeMetric === "MARKET_CAP" || activeMetric === "DAY_RANGE" ? (
+                        <QuarterlyFinancials3D financials={data.financials || []} />
+                    ) : activeMetric === "VOLUME" ? (
+                        <group position={[0, -0.2, 0.1]}>
+                          <Text position={[-1.7, 1.0, 0]} fontSize={0.16} color={holoColor} anchorX="left">
+                            ◈ VOLUME_PROFILE_MATRIX
+                          </Text>
+                          <group position={[0, -0.6, 0]}>
+                            {Array.from({ length: 8 }).map((_, x) =>
+                              Array.from({ length: 5 }).map((_, z) => {
+                                const height = Math.sin(x * 0.5) * Math.cos(z * 0.8) * 1.0 + 0.8;
+                                const isBuy = (x + z) % 2 === 0;
+                                const c = isBuy ? "#00ffcc" : "#ff0055";
+                                return (
+                                  <mesh key={`${x}-${z}`} position={[(x - 3.5) * 0.4, height / 2, (z - 2) * 0.4]}>
+                                    <cylinderGeometry args={[0.15, 0.15, height, 16]} />
+                                    <meshStandardMaterial color={c} emissive={c} emissiveIntensity={0.5} />
+                                  </mesh>
+                                );
+                              })
+                            )}
+                          </group>
+                        </group>
+                    ) : (
+                        <group position={[0, -0.2, 0.2]}>
+                          <Text position={[0, 1.1, 0]} fontSize={0.16} color={sentimentDisplay.color} anchorX="center">
+                            FINBERT_NEURAL_SYNAPSE
+                          </Text>
+                          <group ref={coreRef} position={[0, 0.2, 0]}>
+                            <mesh>
+                              <icosahedronGeometry args={[0.55, 1]} />
+                              <meshBasicMaterial color={sentimentDisplay.color} wireframe transparent opacity={0.65} blending={THREE.AdditiveBlending} />
+                            </mesh>
+                            <mesh>
+                              <sphereGeometry args={[0.3, 16, 16]} />
+                              <meshBasicMaterial color="#ffffff" transparent opacity={0.4} blending={THREE.AdditiveBlending} />
+                            </mesh>
+                          </group>
+                          <group position={[0, 0.2, 0]}>
+                            <GyroRing radius={0.85} tube={0.015} speed={0.8} axis="z" color={sentimentDisplay.color} opacity={0.7} />
+                            <GyroRing radius={1.05} tube={0.01} speed={-0.6} axis="y" color={sentimentDisplay.colorAlt} opacity={0.5} />
+                            <GyroRing radius={1.2} tube={0.008} speed={0.4} axis="x" color="#ffffff" opacity={0.3} />
+                          </group>
+                          <Text position={[0, -0.85, 0]} fontSize={0.24} color="#ffffff" anchorX="center" anchorY="middle">
+                            {`${sentimentDisplay.score.toFixed(0)}% [${sentimentDisplay.label}]`}
+                          </Text>
+                        </group>
+                    )}
+                  </>
                 )}
             </group>
         )}
