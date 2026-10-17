@@ -18,7 +18,27 @@ class AIAnalysis(BaseSchema):
     score: Optional[float] = None
     recommendation: Optional[str] = None
     key_points: Optional[List[str]] = None
-    raw_analysis: Optional[str] = None
+    positive: Optional[float] = None
+    neutral: Optional[float] = None
+    negative: Optional[float] = None
+
+class NewsCatalyst(BaseSchema):
+    title: str
+    publisher: Optional[str] = "Financial News"
+    published_at: Optional[str] = None
+    sentiment_label: str = "Neutral"  # Bullish | Neutral | Bearish
+    confidence_pct: float = 50.0      # 0 to 100
+    impact_category: str = "Growth Catalyst"  # Growth Catalyst | Margin Pressure | Valuation / Rate Risk | Technical Momentum
+    scenario_delta: Dict[str, float] = Field(default_factory=dict)
+
+class ThesisConvictionSummary(BaseSchema):
+    conviction_score: float = 50.0     # 0 to 100
+    regime_label: str = "Neutral Regime"
+    valuation_status: str = "Fairly Valued"
+    catalyst_bias: str = "Neutral"
+    key_support_poc: Optional[float] = None
+    implied_dcf_price: Optional[float] = None
+    margin_of_safety_pct: Optional[float] = None
 
 class CandlePoint(BaseSchema):
     date: str
@@ -73,13 +93,14 @@ class StockData(BaseSchema):
     volume_profile: Optional[List[Dict[str, float]]] = None
     sentiment: Optional[Union[SentimentResult, Dict[str, Any]]] = None
     analysis: Optional[AIAnalysis] = None
-
+    catalysts: Optional[List[NewsCatalyst]] = None
+    thesis_summary: Optional[ThesisConvictionSummary] = None
 
 class StockInsightsResponse(BaseSchema):
     """Response schema for the /api/stock-insights endpoint.
 
     Contains LSTM-predicted trajectory, volatility bounds, fundamentals,
-    and local FinBERT sentiment scoring.
+    local FinBERT sentiment scoring, catalyst headlines, and thesis conviction summary.
     """
     ticker: str
     current_price: float
@@ -93,6 +114,9 @@ class StockInsightsResponse(BaseSchema):
     sentiment_score: float              # [-1.0 to 1.0] from local FinBERT
     sentiment_label: str                # "BULLISH", "NEUTRAL", or "BEARISH"
     prediction_dates: List[str]         # ISO date strings for the next 5 trading days
+    headline_count: Optional[int] = 0
+    catalysts: Optional[List[NewsCatalyst]] = None
+    thesis_summary: Optional[ThesisConvictionSummary] = None
 
 
 class VoiceCommandRequest(BaseSchema):

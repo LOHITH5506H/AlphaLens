@@ -32,13 +32,31 @@ interface ARSceneProps {
   onTargetFound: (targetIndex: number, ticker: string, isFallback?: boolean) => void;
   onTargetLost: (targetIndex: number) => void;
   onClose?: () => void;
+  scenarioParams?: any;
+  showLSTMConeInTrader?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ARTracker — Bridges MindAR computer vision ↔ R3F scene graph
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis, stockInsights, activeTab, activeMetric, selectedMetricData, timeframe, onTimeframeChange, activeIndicators, onPinchStateChange, stockLoading }: any) => {
+const ARTracker = ({ 
+  mindarInstance, 
+  anchors, 
+  stockData, 
+  aiAnalysis, 
+  stockInsights, 
+  activeTab, 
+  activeMetric, 
+  selectedMetricData, 
+  timeframe, 
+  onTimeframeChange, 
+  activeIndicators, 
+  onPinchStateChange, 
+  stockLoading,
+  scenarioParams,
+  showLSTMConeInTrader,
+}: any) => {
   const { camera } = useThree();
   const groupRef = useRef<THREE.Group>(null);
 
@@ -67,7 +85,21 @@ const ARTracker = ({ mindarInstance, anchors, stockData, aiAnalysis, stockInsigh
   return (
     <group ref={groupRef} matrixAutoUpdate={false} visible={true}>
       <group rotation={[Math.PI / 2, 0, 0]} scale={[1.2, 1.2, 1.2]}>
-        <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} activeMetric={activeMetric} selectedMetricData={selectedMetricData} timeframe={timeframe} onTimeframeChange={onTimeframeChange} activeIndicators={activeIndicators} onPinchStateChange={onPinchStateChange} isLoading={stockLoading} />
+        <Stock3DVisuals 
+          data={stockData} 
+          aiAnalysis={aiAnalysis} 
+          stockInsights={stockInsights} 
+          activeTab={activeTab} 
+          activeMetric={activeMetric} 
+          selectedMetricData={selectedMetricData} 
+          timeframe={timeframe} 
+          onTimeframeChange={onTimeframeChange} 
+          activeIndicators={activeIndicators} 
+          onPinchStateChange={onPinchStateChange} 
+          isLoading={stockLoading} 
+          scenarioParams={scenarioParams}
+          showLSTMConeInTrader={showLSTMConeInTrader}
+        />
       </group>
     </group>
   );
@@ -135,6 +167,8 @@ export default function ARScene({
   isManualMode,
   stockLoading,
   onClose,
+  scenarioParams,
+  showLSTMConeInTrader,
 }: ARSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mindarRef = useRef<any>(null);
@@ -357,7 +391,21 @@ export default function ARScene({
                   dampingFactor={0.05}
                 />
                 <Center>
-                  <Stock3DVisuals data={stockData} aiAnalysis={aiAnalysis} stockInsights={stockInsights} activeTab={activeTab} activeMetric={activeMetric} selectedMetricData={selectedMetricData} timeframe={timeframe} onTimeframeChange={onTimeframeChange} activeIndicators={activeIndicators} onPinchStateChange={onPinchStateChange} isLoading={stockLoading} />
+                  <Stock3DVisuals 
+                    data={stockData} 
+                    aiAnalysis={aiAnalysis} 
+                    stockInsights={stockInsights} 
+                    activeTab={activeTab} 
+                    activeMetric={activeMetric} 
+                    selectedMetricData={selectedMetricData} 
+                    timeframe={timeframe} 
+                    onTimeframeChange={onTimeframeChange} 
+                    activeIndicators={activeIndicators} 
+                    onPinchStateChange={onPinchStateChange} 
+                    isLoading={stockLoading} 
+                    scenarioParams={scenarioParams}
+                    showLSTMConeInTrader={showLSTMConeInTrader}
+                  />
                 </Center>
               </>
             ) : (
@@ -375,6 +423,8 @@ export default function ARScene({
                 activeIndicators={activeIndicators}
                 onPinchStateChange={onPinchStateChange}
                 stockLoading={stockLoading}
+                scenarioParams={scenarioParams}
+                showLSTMConeInTrader={showLSTMConeInTrader}
               />
             )}
 

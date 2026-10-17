@@ -48,6 +48,43 @@ export interface VolumeProfileBin {
   volume: number;
 }
 
+export interface NewsCatalyst {
+  title: string;
+  publisher?: string | null;
+  published_at?: string | null;
+  sentiment_label: "Bullish" | "Neutral" | "Bearish" | string;
+  confidence_pct: number;
+  impact_category: "Growth Catalyst" | "Margin Pressure" | "Margin Expansion" | "Valuation / Rate Risk" | "Technical Momentum" | string;
+  scenario_delta: {
+    wacc_delta?: number;
+    tgr_delta?: number;
+    margin_delta?: number;
+    lstm_drift?: number;
+  };
+}
+
+export interface ThesisConvictionSummary {
+  conviction_score: number;
+  regime_label: string;
+  valuation_status: string;
+  catalyst_bias: string;
+  key_support_poc?: number | null;
+  volume_poc?: number | null;
+  implied_dcf_price?: number | null;
+  fair_value_estimate?: number | null;
+  margin_of_safety_pct?: number | null;
+}
+
+export interface ScenarioParams {
+  wacc_delta: number;    // e.g. -0.01 (-1%)
+  tgr_delta: number;     // e.g. +0.005 (+0.5%)
+  margin_delta: number;  // e.g. +0.02 (+2%)
+  lstm_drift?: number;   // e.g. +0.03 (+3%)
+  preset?: "Bull" | "Base" | "Bear" | "Custom";
+  active_scenario?: "bull" | "base" | "bear" | "custom" | string;
+  activeCatalystTitle?: string | null;
+}
+
 /**
  * Matches the backend StockData Pydantic schema (models/schemas.py).
  * The backend sends: symbol, price, change, changePercent, high, low, open, etc.
@@ -74,6 +111,8 @@ export interface StockData {
   volume_profile?: VolumeProfileBin[] | null;
   sentiment?: any | null;
   analysis?: any | null;
+  catalysts?: NewsCatalyst[] | null;
+  thesis_summary?: ThesisConvictionSummary | null;
 }
 
 /**
@@ -84,7 +123,7 @@ export interface StockData {
  * for forward compatibility and richer 3D visualization.
  */
 export interface AIAnalysis {
-  // Flat probability scores (current backend format)
+  // Flat probability scores (current backend format, scaled 0-100)
   positive: number;
   neutral: number;
   negative: number;
@@ -114,7 +153,7 @@ export interface MarkerMapping {
 
 /**
  * LSTM-predicted stock insights from /api/stock-insights endpoint.
- * Contains 5-day trajectory, volatility corridor, fundamentals, and sentiment.
+ * Contains 5-day trajectory, volatility corridor, fundamentals, catalysts, and thesis summary.
  */
 export interface StockInsights {
   ticker: string;
@@ -129,6 +168,9 @@ export interface StockInsights {
   sentiment_score: number;          // [-1.0 to 1.0] from local FinBERT
   sentiment_label: 'BULLISH' | 'NEUTRAL' | 'BEARISH';
   prediction_dates: string[];       // ISO date strings
+  headline_count?: number;
+  catalysts?: NewsCatalyst[] | null;
+  thesis_summary?: ThesisConvictionSummary | null;
 }
 
 export interface MetricDataSeries {

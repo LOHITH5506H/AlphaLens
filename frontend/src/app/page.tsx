@@ -13,7 +13,8 @@ import { useHandTracking } from "@/hooks/useHandTracking";
 import HandCursor from "@/components/HandCursor";
 import { sendVoiceCommand, searchTicker } from "@/lib/api";
 import { METRIC_TIMEFRAMES } from "@/lib/constants";
-import type { FundamentalMetricResponse } from "@/types";
+import type { FundamentalMetricResponse, ScenarioParams } from "@/types";
+import { computeScenarioDCF } from "@/lib/mathUtils";
 
 // Dynamically import ARScene with SSR disabled (needs browser APIs)
 const ARScene = dynamic(() => import("@/components/ARScene"), {
@@ -68,7 +69,7 @@ export default function HomePage() {
   const [activeMetric, setActiveMetric] = useState<string>("INTRADAY");
   const [timeframe, setTimeframe] = useState<string>("1Yr");
   const [activeIndicators, setActiveIndicators] = useState<Record<string, boolean>>({
-    sma: false,
+    sma: true,
     bollinger: false,
     macd: false
   });
@@ -76,6 +77,16 @@ export default function HomePage() {
   const [metricLoading, setMetricLoading] = useState(false);
   const [isPinching, setIsPinching] = useState(false);
   const [isHandTrackingEnabled, setIsHandTrackingEnabled] = useState(false);
+
+  // ── Analyst Catalyst & Stress-Testing Scenario State ─────────────────
+  const [scenarioParams, setScenarioParams] = useState<ScenarioParams>({
+    wacc_delta: 0,
+    tgr_delta: 0,
+    margin_delta: 0,
+    active_scenario: "base",
+  });
+  const [isPitchMode, setIsPitchMode] = useState<boolean>(false);
+  const [showLSTMConeInTrader, setShowLSTMConeInTrader] = useState<boolean>(true);
 
   const stockData = useStockData();
   const aiAnalysis = useAIAnalysis();
@@ -197,16 +208,58 @@ export default function HomePage() {
     sendVoiceCommand(transcript, activeTickerRef.current)
       .then((response) => {
         setVoiceMessage(response.message);
-        if (response.intent in INTENT_TO_STATS) {
-          const stats = INTENT_TO_STATS[response.intent];
+        const intent = response.intent;
+        if (intent in INTENT_TO_STATS) {
+          const stats = INTENT_TO_STATS[intent];
           setHighlightedStats(stats.length > 0 ? stats : undefined);
         }
-        if (response.intent === "ai_analysis" && activeTickerRef.current) {
+        if (intent === "ai_analysis" && activeTickerRef.current) {
           if (stockData.data) {
             const data = stockData.data;
             const text = `${data.name ?? data.symbol} (${data.symbol}) is currently trading at $${data.price}. It has a market cap of $${data.marketCap ?? 'N/A'} and a PE ratio of ${data.peRatio ?? 'N/A'}.`;
             aiAnalysis.fetch(text);
           }
+        }
+        // Analyst Workflow & Stress-Testing Intents:
+        if (intent === "stress_test_bear") {
+          setScenarioParams({
+            wacc_delta: 0.015,
+            tgr_delta: -0.01,
+            margin_delta: -0.02,
+            active_scenario: "bear",
+          });
+        } else if (intent === "stress_test_bull") {
+          setScenarioParams({
+            wacc_delta: -0.01,
+            tgr_delta: 0.015,
+            margin_delta: 0.02,
+            active_scenario: "bull",
+          });
+        } else if (intent === "stress_test_base") {
+          setScenarioParams({
+            wacc_delta: 0,
+            tgr_delta: 0,
+            margin_delta: 0,
+            active_scenario: "base",
+          });
+        } else if (intent === "show_dcf") {
+          setActiveTab("Investor");
+          setActiveMetric("DCF_TERRAIN");
+        } else if (intent === "show_peers") {
+          setActiveTab("Investor");
+          setActiveMetric("PEER_SCATTER");
+        } else if (intent === "show_dupont") {
+          setActiveTab("Investor");
+          setActiveMetric("DUPONT_TREE");
+        } else if (intent === "show_vpvr") {
+          setActiveTab("Trader");
+          setActiveMetric("VPVR");
+        } else if (intent === "switch_trader") {
+          setActiveTab("Trader");
+        } else if (intent === "switch_investor") {
+          setActiveTab("Investor");
+        } else if (intent === "pitch_mode") {
+          setIsPitchMode(prev => !prev);
         }
       })
       .catch(() => {
@@ -345,6 +398,15 @@ export default function HomePage() {
   const finbertScore = stockInsights.insights?.sentiment_score ?? null;
   const aiConf = finbertScore !== null ? Math.abs(finbertScore) : (aiAnalysis.analysis?.score ?? 0.5) * 100;
 
+  const pitchDcfResult = useMemo(() => {
+    if (!stockData.data) return null;
+    return computeScenarioDCF(
+      stockData.data.price,
+      stockInsights.insights?.thesis_summary?.implied_dcf_price,
+      scenarioParams,
+      stockInsights.insights?.thesis_summary?.conviction_score || 0
+    );
+  }, [stockData.data, stockInsights.insights, scenarioParams]);
 
   return (
     <main className="relative w-full h-screen overflow-hidden bg-slate-950">
@@ -364,6 +426,8 @@ export default function HomePage() {
           onTimeframeChange={setTimeframe}
           activeIndicators={activeIndicators}
           onPinchStateChange={setIsPinching}
+          scenarioParams={scenarioParams}
+          showLSTMConeInTrader={showLSTMConeInTrader}
           onTargetFound={(index, ticker, isFallback) => handleTargetFound(index, ticker, isFallback)}
           onTargetLost={(index) => {}}
           onClose={() => {
@@ -377,8 +441,85 @@ export default function HomePage() {
         />
       </div>
 
+      {/* ── 🎬 LIVE THESIS & PITCH BROADCAST HUD ──────────────────────── */}
+      {isPitchMode && stockData.data && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-5xl pointer-events-auto">
+          <div className="bg-slate-950/90 backdrop-blur-xl border border-cyan-500/40 rounded-2xl p-3.5 shadow-2xl shadow-cyan-950/50 flex flex-wrap items-center justify-between gap-4">
+            {/* Left: Ticker & Live Pulse */}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-400 text-xs font-semibold animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping inline-block" />
+                PITCH STUDIO
+              </div>
+              <div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xl font-bold tracking-tight text-white">{stockData.data.symbol}</span>
+                  <span className="text-xs text-slate-400 hidden sm:inline">{stockData.data.name}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-semibold text-slate-200">${stockData.data.price?.toFixed(2)}</span>
+                  <span className={stockData.data.change && stockData.data.change >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                    {stockData.data.change && stockData.data.change >= 0 ? "+" : ""}{stockData.data.changePercent?.toFixed(2)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Middle: Valuation & DCF Thesis (Aligned 100% with mathUtils & DCF Terrain) */}
+            <div className="hidden md:flex items-center gap-6 border-x border-slate-800/80 px-6 text-xs">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Implied DCF Fair Value</div>
+                <div className={`text-sm font-bold font-mono ${pitchDcfResult?.statusColor || "text-cyan-400"}`}>
+                  ${pitchDcfResult ? pitchDcfResult.fairValue.toFixed(2) : "---"}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Margin of Safety</div>
+                <div className={`text-sm font-bold font-mono ${pitchDcfResult?.statusColor || "text-cyan-400"}`}>
+                  {pitchDcfResult ? pitchDcfResult.upsideLabel : "---"}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Active Stress Scenario</div>
+                <div className={`text-xs font-semibold px-2 py-0.5 rounded border ${pitchDcfResult?.bgBadgeColor || "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"}`}>
+                  {(scenarioParams.active_scenario || scenarioParams.preset || "base").toUpperCase()} CASE
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Technical Shelf & Mode Fast Switcher */}
+            <div className="flex items-center gap-2 text-xs">
+              {stockInsights.insights?.thesis_summary?.volume_poc && (
+                <div className="hidden lg:block text-right pr-2">
+                  <div className="text-[10px] text-slate-400">VPVR Volume POC</div>
+                  <div className="font-semibold text-amber-300">${stockInsights.insights.thesis_summary.volume_poc.toFixed(2)}</div>
+                </div>
+              )}
+              <button 
+                onClick={() => {
+                  const nextTab = activeTab === "Trader" ? "Investor" : "Trader";
+                  setActiveTab(nextTab);
+                  if (nextTab === "Trader") setActiveMetric("VPVR");
+                  else setActiveMetric("DCF_TERRAIN");
+                }}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium transition"
+              >
+                {activeTab === "Trader" ? "🏛️ Valuation" : "⚡ Trader"}
+              </button>
+              <button 
+                onClick={() => setIsPitchMode(false)}
+                className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 transition"
+                title="Exit Pitch Mode"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 2D HUD OVERLAY - Centralized Dashboard */}
-      {showDashboard && activeTicker && stockData.data && (
+      {showDashboard && activeTicker && stockData.data && !isPitchMode && (
         <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-start justify-center p-6 md:p-12">
           {/* We position ARDashboard on the left side of the screen, or center on mobile */}
           <div className="pointer-events-auto h-full flex items-center">
@@ -393,13 +534,28 @@ export default function HomePage() {
               activeTab={activeTab}
               activeMetric={activeMetric}
               activeIndicators={activeIndicators}
-              onTabChange={setActiveTab}
+              onTabChange={(tab) => {
+                setActiveTab(tab);
+                if (tab === "Trader") {
+                  setActiveMetric("VPVR");
+                } else if (tab === "Investor") {
+                  setActiveMetric("DCF_TERRAIN");
+                }
+              }}
               onSelectMetric={(metric: string) => {
                 setActiveMetric(prev => prev === metric ? "INTRADAY" : metric);
               }}
               onToggleIndicator={(indicator: string) => {
                 setActiveIndicators(prev => ({...prev, [indicator]: !prev[indicator]}));
               }}
+              stockInsights={stockInsights.insights}
+              scenarioParams={scenarioParams}
+              onScenarioChange={setScenarioParams}
+              onApplyCatalystDelta={(delta: Partial<ScenarioParams>) => setScenarioParams(prev => ({ ...prev, ...delta }))}
+              isPitchMode={isPitchMode}
+              onTogglePitchMode={() => setIsPitchMode(prev => !prev)}
+              showLSTMConeInTrader={showLSTMConeInTrader}
+              onToggleLSTMCone={() => setShowLSTMConeInTrader(prev => !prev)}
             />
           </div>
         </div>
@@ -452,30 +608,31 @@ export default function HomePage() {
             onStart={speech.startListening}
             onStop={speech.stopListening}
           />
-          {/* Hand Tracking Toggle */}
+          {/* Hand Tracking Toggle — Top right next to Camera button */}
           <button
             onClick={() => setIsHandTrackingEnabled(!isHandTrackingEnabled)}
             style={{
               position: "fixed",
-              bottom: "24px",
-              left: "24px",
+              top: "16px",
+              right: "135px",
               zIndex: 110,
-              padding: "12px 16px",
-              borderRadius: "24px",
-              background: isHandTrackingEnabled ? "rgba(56, 189, 248, 0.4)" : "rgba(15, 23, 42, 0.6)",
-              backdropFilter: "blur(8px)",
-              border: `1px solid ${isHandTrackingEnabled ? "rgba(56, 189, 248, 0.6)" : "rgba(148, 163, 184, 0.15)"}`,
+              padding: "9px 15px",
+              borderRadius: "20px",
+              background: isHandTrackingEnabled ? "rgba(56, 189, 248, 0.35)" : "rgba(15, 23, 42, 0.75)",
+              backdropFilter: "blur(12px)",
+              border: `1px solid ${isHandTrackingEnabled ? "rgba(56, 189, 248, 0.6)" : "rgba(148, 163, 184, 0.2)"}`,
               color: "#f1f5f9",
-              fontSize: "14px",
+              fontSize: "13px",
               fontWeight: 600,
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
-              gap: "8px",
+              gap: "6px",
               boxShadow: isHandTrackingEnabled ? "0 0 15px rgba(56,189,248,0.4)" : "0 4px 12px rgba(0,0,0,0.3)",
+              transition: "all 0.2s ease",
             }}
           >
-            <span style={{ fontSize: "18px" }}>{isHandTrackingEnabled ? "✋" : "🤚"}</span>
+            <span style={{ fontSize: "16px" }}>{isHandTrackingEnabled ? "✋" : "🤚"}</span>
             <span>{isHandTrackingEnabled ? "Gestures On" : "Gestures Off"}</span>
           </button>
           

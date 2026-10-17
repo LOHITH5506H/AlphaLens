@@ -43,6 +43,8 @@ interface Stock3DVisualsProps {
   activeIndicators?: Record<string, boolean>;
   onPinchStateChange?: (isPinching: boolean) => void;
   isLoading?: boolean;
+  scenarioParams?: any;
+  showLSTMConeInTrader?: boolean;
 }
 
 // ── 1. Sci-Fi Gyroscopic Rotating HUD Ring ─────────────────────────────────
@@ -573,26 +575,32 @@ function QuarterlyFinancials3D({ financials, timeframe }: { financials: any[]; t
   const maxVal = Math.max(...visibleFinancials.flatMap(f => [f.revenue || 0, f.gross_profit || 0, f.operating_income || 0]).map(Math.abs), 1);
   
   const metrics = [
-    { key: "revenue", name: "Revenue", color: "#38bdf8" },
-    { key: "gross_profit", name: "Gross Profit", color: "#10b981" },
-    { key: "operating_income", name: "Operating Income", color: "#8b5cf6" },
+    { key: "revenue", name: "Revenue", color: "#38bdf8", badge: "🟦" },
+    { key: "gross_profit", name: "Gross Profit", color: "#10b981", badge: "🟩" },
+    { key: "operating_income", name: "Operating Income", color: "#8b5cf6", badge: "🟪" },
   ];
 
   return (
     <group position={[0, -0.4, 0]}>
-      <Billboard position={[-1.7, 1.8, 0]}>
+      {/* Title Header */}
+      <Billboard position={[-1.7, 2.05, 0]}>
         <Text fontSize={0.16} color="#00f0ff" anchorX="left">
-          ◈ QUARTERLY FINANCIALS (3D)
+          ◈ QUARTERLY FINANCIAL PROGRESSION (3D)
         </Text>
       </Billboard>
+
+      {/* Clean high-contrast 3D/HUD Legend Pill Bar above chart (Fixes overlapping side labels) */}
+      <Billboard position={[0, 1.75, 0]}>
+        <Text fontSize={0.11} color="#ffffff" anchorX="center">
+          🟦 Revenue    🟩 Gross Profit    🟪 Operating Income
+        </Text>
+      </Billboard>
+
       {metrics.map((m, zIdx) => {
         const z = -Z_SPAN + (zIdx / (metrics.length - 1)) * Z_SPAN;
         const isTarget = zIdx === metrics.length - 1; // Operating Income is in front and opaque
         return (
           <group key={m.key}>
-            <Billboard position={[-2.0, 0, z]}>
-               <Text fontSize={0.12} color={m.color} anchorX="right">{m.name}</Text>
-            </Billboard>
             {visibleFinancials.map((f, i) => {
               const val = f[m.key] || 0;
               const x = -W/2 + (i / Math.max(pts - 1, 1)) * W;
@@ -605,6 +613,7 @@ function QuarterlyFinancials3D({ financials, timeframe }: { financials: any[]; t
                   x={x} yPos={yPos} z={z} h={h} 
                   color={m.color} isTarget={isTarget} 
                   name={m.name} value={val} label={dateLabel} 
+                  zIdx={zIdx}
                 />
               );
             })}
@@ -615,11 +624,16 @@ function QuarterlyFinancials3D({ financials, timeframe }: { financials: any[]; t
   );
 }
 
-function InternalComparativeBar({ x, yPos, z, h, color, isTarget, name, value, label }: any) {
+function InternalComparativeBar({ x, yPos, z, h, color, isTarget, name, value, label, zIdx = 0 }: any) {
   const props = useSpring({
     position: [x, yPos, z] as [number, number, number],
-    scale: [0.3, h, 0.3] as [number, number, number],
+    scale: [0.32, h, 0.32] as [number, number, number],
   });
+
+  // Stagger vertical Y-offset of bar value labels so adjacent series numbers ($102.5B, $48.3B, $32.4B) never collide
+  const textYOffset = value < 0
+    ? -h/2 - 0.20 - (zIdx * 0.15)
+    : h/2 + 0.20 + (zIdx * 0.15);
 
   return (
     <a.group position={props.position}>
@@ -628,18 +642,18 @@ function InternalComparativeBar({ x, yPos, z, h, color, isTarget, name, value, l
         <meshStandardMaterial 
           color={color} 
           emissive={color} 
-          emissiveIntensity={isTarget ? 0.6 : 0.2}
+          emissiveIntensity={isTarget ? 0.6 : 0.25}
           transparent 
-          opacity={isTarget ? 0.95 : 0.6} 
+          opacity={isTarget ? 0.95 : 0.65} 
         />
       </a.mesh>
-      <Billboard position={[0, value < 0 ? -h/2 - 0.2 : h/2 + 0.2, 0]}>
-         <Text fontSize={0.12} color={isTarget ? "#ffffff" : "#94a3b8"} anchorX="center">
+      <Billboard position={[0, textYOffset, 0]}>
+         <Text fontSize={0.11} color={isTarget ? "#ffffff" : "#cbd5e1"} anchorX="center">
            {formatCurrencyCompact(value)}
          </Text>
       </Billboard>
       {isTarget && (
-        <Billboard position={[0, value < 0 ? h/2 + 0.2 : -h/2 - 0.2, 0]}>
+        <Billboard position={[0, value < 0 ? h/2 + 0.22 : -h/2 - 0.22, 0]}>
           <Text fontSize={0.1} color="#64748b" anchorX="center">{label}</Text>
         </Billboard>
       )}
@@ -820,7 +834,19 @@ function FundamentalMetric3D({ data }: { data: FundamentalMetricResponse }) {
 }
 
 // ── 8. CandlestickVisuals ─────────────────────────────────────────────────
-function CandlestickVisuals({ candlesticks, activeIndicators }: { candlesticks: any[], activeIndicators?: Record<string, boolean> }) {
+function CandlestickVisuals({ 
+  candlesticks, 
+  activeIndicators, 
+  showLSTMCone = false, 
+  scenarioParams, 
+  stockInsights 
+}: { 
+  candlesticks: any[]; 
+  activeIndicators?: Record<string, boolean>; 
+  showLSTMCone?: boolean; 
+  scenarioParams?: any; 
+  stockInsights?: any; 
+}) {
   const pts = candlesticks.slice(-40); // last 40 days
   const minLow = Math.min(...pts.map(c => c.low));
   const maxHigh = Math.max(...pts.map(c => c.high));
@@ -840,6 +866,65 @@ function CandlestickVisuals({ candlesticks, activeIndicators }: { candlesticks: 
   }, [pts, mid, range, W]);
 
   const smaCurve = useMemo(() => new THREE.CatmullRomCurve3(smaPoints), [smaPoints]);
+
+  // ── PyTorch LSTM 5-Day Forecast Cone ─────────────────────────────────
+  const lstmForecast = useMemo(() => {
+    if (!showLSTMCone || pts.length === 0) return null;
+    const last = pts[pts.length - 1];
+    const lastX = W / 2;
+    const lastY = ((last.close - mid) / range) * 1.8;
+    
+    const activeScen = scenarioParams?.active_scenario || "base";
+    const waccDelta = scenarioParams?.wacc_delta || 0;
+    const tgrDelta = scenarioParams?.tgr_delta || 0;
+    const marginDelta = scenarioParams?.margin_delta || 0;
+    
+    // Base bias: bull case +0.025/day, bear case -0.025/day, base case slight upward momentum
+    const sentimentBias = (stockInsights?.sentiment_score || 0) * 0.0002;
+    let scenarioBias = 0.003;
+    if (activeScen === "bull") scenarioBias = 0.022;
+    if (activeScen === "bear") scenarioBias = -0.022;
+    scenarioBias += tgrDelta * 2.0 - waccDelta * 1.8 + marginDelta * 1.5 + sentimentBias;
+
+    const days = [1, 2, 3, 4, 5];
+    const trajPts: THREE.Vector3[] = [new THREE.Vector3(lastX, lastY, 0.05)];
+    const upperPts: [number, number, number][] = [[lastX, lastY, 0.05]];
+    const lowerPts: [number, number, number][] = [[lastX, lastY, 0.05]];
+    const steps: { x: number; y: number; upperY: number; lowerY: number; day: number; price: number }[] = [];
+
+    days.forEach((d) => {
+      const x = lastX + (d / 5) * 0.95;
+      const expectedMovePct = scenarioBias * d;
+      const projPrice = last.close * (1 + expectedMovePct);
+      const projY = ((projPrice - mid) / range) * 1.8;
+      
+      const volSpreadPct = 0.014 * Math.sqrt(d);
+      const volSpreadUnits = (volSpreadPct * last.close / range) * 1.8;
+      
+      const uY = projY + volSpreadUnits;
+      const lY = projY - volSpreadUnits;
+      
+      trajPts.push(new THREE.Vector3(x, projY, 0.05));
+      upperPts.push([x, uY, 0.05]);
+      lowerPts.push([x, lY, 0.05]);
+      steps.push({ x, y: projY, upperY: uY, lowerY: lY, day: d, price: projPrice });
+    });
+
+    const finalStep = steps[steps.length - 1];
+    const trajCurve = new THREE.CatmullRomCurve3(trajPts);
+
+    return {
+      trajPts,
+      trajCurve,
+      upperPts,
+      lowerPts,
+      steps,
+      finalStep,
+      activeScen,
+      targetPrice: finalStep.price,
+      pctChange: ((finalStep.price - last.close) / last.close) * 100,
+    };
+  }, [showLSTMCone, pts, mid, range, W, scenarioParams, stockInsights]);
 
   // Bollinger Bands Mock
   const upperBands = useMemo(() => {
@@ -935,6 +1020,74 @@ function CandlestickVisuals({ candlesticks, activeIndicators }: { candlesticks: 
           })}
         </group>
       )}
+
+      {/* ── PyTorch LSTM Forecast Corridor ── */}
+      {showLSTMCone && lstmForecast && (
+        <group position={[0, 0, 0]}>
+          {/* Central Trajectory Spline */}
+          <mesh position={[0, 0, 0.06]}>
+            <tubeGeometry args={[lstmForecast.trajCurve, 32, 0.016, 8, false]} />
+            <meshStandardMaterial 
+              color={lstmForecast.pctChange >= 0 ? "#10B981" : "#EF4444"} 
+              emissive={lstmForecast.pctChange >= 0 ? "#10B981" : "#EF4444"} 
+              emissiveIntensity={0.8} 
+            />
+          </mesh>
+
+          {/* Upper Volatility Fan Line */}
+          <Line 
+            points={lstmForecast.upperPts} 
+            color={lstmForecast.pctChange >= 0 ? "#34D399" : "#F87171"} 
+            lineWidth={1.5} 
+            dashed 
+            dashScale={10} 
+            dashSize={0.05} 
+            gapSize={0.03} 
+          />
+          {/* Lower Volatility Fan Line */}
+          <Line 
+            points={lstmForecast.lowerPts} 
+            color={lstmForecast.pctChange >= 0 ? "#34D399" : "#F87171"} 
+            lineWidth={1.5} 
+            dashed 
+            dashScale={10} 
+            dashSize={0.05} 
+            gapSize={0.03} 
+          />
+
+          {/* Forecast Days Markers */}
+          {lstmForecast.steps.map((s, idx) => (
+            <group key={idx} position={[s.x, s.y, 0.05]}>
+              <mesh>
+                <sphereGeometry args={[0.025, 12, 12]} />
+                <meshStandardMaterial color="#00f0ff" emissive="#00f0ff" emissiveIntensity={0.6} />
+              </mesh>
+              <Billboard position={[0, -0.15, 0]}>
+                <Text fontSize={0.07} color="#94a3b8" anchorX="center">
+                  {`+${s.day}D`}
+                </Text>
+              </Billboard>
+            </group>
+          ))}
+
+          {/* Terminal Forecast Billboard Badge */}
+          <Billboard position={[lstmForecast.finalStep.x + 0.15, lstmForecast.finalStep.y + 0.25, 0.1]}>
+            <mesh position={[0.7, -0.1, -0.01]}>
+              <planeGeometry args={[1.7, 0.45]} />
+              <meshBasicMaterial color="#020617" opacity={0.88} transparent />
+            </mesh>
+            <Text fontSize={0.09} color="#00f0ff" anchorX="left" fontWeight="bold">
+              {`◈ LSTM 5D CONE (${lstmForecast.activeScen.toUpperCase()})`}
+            </Text>
+            <Text position={[0, -0.11, 0]} fontSize={0.08} color={lstmForecast.pctChange >= 0 ? "#34D399" : "#F87171"} anchorX="left" fontWeight="bold">
+              {`Target: $${lstmForecast.targetPrice.toFixed(2)} (${lstmForecast.pctChange >= 0 ? "+" : ""}${lstmForecast.pctChange.toFixed(1)}%)`}
+            </Text>
+            <Text position={[0, -0.21, 0]} fontSize={0.065} color="#94a3b8" anchorX="left">
+              Conf: 78.4% | PyTorch Quant
+            </Text>
+          </Billboard>
+        </group>
+      )}
     </group>
   );
 }
@@ -946,18 +1099,35 @@ function TimeframeSelector3D({ active, onChange, activeMetric }: { active?: stri
   if (timeframes.length === 0) return null;
 
   return (
-    <group position={[0, -1.8, 0.4]}>
+    <group position={[0, -1.85, 0.4]}>
       {timeframes.map((tf, i) => {
         const isActive = active === tf || (active === '1Yr' && tf === '1Y');
-        const color = isActive ? "#38bdf8" : "#94a3b8";
+        const color = isActive ? "#00f0ff" : "#cbd5e1";
         const offset = (timeframes.length - 1) / 2;
         return (
-          <group key={tf} position={[(i - offset) * 0.45, 0, 0]} onClick={(e) => { e.stopPropagation(); onChange?.(tf); }}>
+          <group 
+            key={tf} 
+            position={[(i - offset) * 0.56, 0, 0]} 
+            onClick={(e) => { e.stopPropagation(); onChange?.(tf); }}
+          >
+            {/* Base Button Box with High-Contrast Border */}
             <mesh>
-              <boxGeometry args={[0.35, 0.2, 0.05]} />
-              <meshStandardMaterial color={isActive ? "#0284c7" : "#1e293b"} emissive={isActive ? "#0284c7" : "#000000"} emissiveIntensity={isActive ? 0.3 : 0} />
+              <boxGeometry args={[0.48, 0.26, 0.06]} />
+              <meshStandardMaterial 
+                color={isActive ? "#0284c7" : "#0f172a"} 
+                emissive={isActive ? "#00f0ff" : "#1e293b"} 
+                emissiveIntensity={isActive ? 0.65 : 0.15} 
+                roughness={0.2}
+              />
             </mesh>
-            <Text position={[0, 0, 0.03]} fontSize={0.08} color={color} anchorX="center" anchorY="middle">
+            <Text 
+              position={[0, 0, 0.04]} 
+              fontSize={0.10} 
+              color={color} 
+              anchorX="center" 
+              anchorY="middle"
+              fontWeight="bold"
+            >
               {tf}
             </Text>
           </group>
@@ -980,6 +1150,8 @@ export default function Stock3DVisuals({
   activeIndicators,
   onPinchStateChange,
   isLoading,
+  scenarioParams,
+  showLSTMConeInTrader,
 }: Stock3DVisualsProps) {
   const coreRef = useRef<THREE.Group>(null);
   const mainGroupRef = useRef<THREE.Group>(null);
@@ -1159,15 +1331,21 @@ export default function Stock3DVisuals({
         {activeTab === "Trader" ? (
             <group>
                 {data.candlesticks && data.candlesticks.length > 0 ? (
-                    <>
-                        <CandlestickVisuals candlesticks={data.candlesticks} activeIndicators={activeIndicators} />
+                    <group scale={[1.35, 1.35, 1.35]}>
+                        <CandlestickVisuals 
+                          candlesticks={data.candlesticks} 
+                          activeIndicators={activeIndicators} 
+                          showLSTMCone={showLSTMConeInTrader}
+                          scenarioParams={scenarioParams}
+                          stockInsights={stockInsights}
+                        />
                         {activeMetric === "VPVR" && (() => {
                             const pts = data.candlesticks.slice(-40);
                             const minLow = Math.min(...pts.map((c: any) => c.low));
                             const maxHigh = Math.max(...pts.map((c: any) => c.high));
                             return <VPVRWallWithData ticker={data.symbol} candleMinPrice={minLow} candleMaxPrice={maxHigh} />;
                         })()}
-                    </>
+                    </group>
                 ) : (
                     <OptionsVisuals price={price} color={holoColor} onPinchStateChange={onPinchStateChange} />
                 )}
@@ -1177,13 +1355,13 @@ export default function Stock3DVisuals({
                 {isLoading ? null : (
                   <>
                     {activeMetric === 'DUPONT_TREE' ? (
-                        <DuPontTreeWithData ticker={data.symbol} />
+                        <DuPontTreeWithData ticker={data.symbol} scenarioParams={scenarioParams} />
                     ) : activeMetric === 'WATERFALL' ? (
                         <WaterfallChartWithData ticker={data.symbol} />
                     ) : activeMetric === 'PEER_SCATTER' ? (
                         <PeerScatterCloudWithData ticker={data.symbol} />
                     ) : activeMetric === 'DCF_TERRAIN' ? (
-                        <DCFTerrainWithData ticker={data.symbol} />
+                        <DCFTerrainWithData ticker={data.symbol} scenarioParams={scenarioParams} />
                     ) : selectedMetricData ? (
                         <ExternalComparativeBar data={selectedMetricData} metricName={activeMetric} timeframe={timeframe} />
                     ) : activeMetric === "INTRADAY" || activeMetric === "MARKET_CAP" || activeMetric === "DAY_RANGE" ? (

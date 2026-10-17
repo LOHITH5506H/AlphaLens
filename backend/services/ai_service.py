@@ -117,14 +117,31 @@ Important rules:
 - Compare PE ratio to general market benchmarks (~20-25 for S&P 500 average).
 """
 
-VOICE_SYSTEM_PROMPT = """You are AlphaLens, an AR investment assistant. The user has spoken a voice command while viewing financial data for a stock.
+VOICE_SYSTEM_PROMPT = """You are AlphaLens, an AR investment assistant and spatial financial terminal. The user has spoken a voice command while viewing financial data for a stock.
 
 Parse the user's intent and respond with a JSON object containing:
-- "intent": one of ["show_pe", "show_eps", "show_market_cap", "show_price", "show_chart", "show_news", "ai_analysis", "show_volume", "show_sector", "show_all", "unknown"]
+- "intent": one of [
+    "show_pe", "show_eps", "show_market_cap", "show_price", "show_chart", "show_news", "ai_analysis", "show_volume", "show_sector", "show_all",
+    "stress_test_bear", "stress_test_bull", "stress_test_base",
+    "show_dcf", "show_peers", "show_dupont", "show_vpvr",
+    "switch_trader", "switch_investor", "pitch_mode",
+    "unknown"
+  ]
 - "message": a brief, friendly response to the user (1-2 sentences)
 - "data": null (or relevant extra data if needed)
 
-Be flexible with natural language — "What's the PE?" and "Show me price to earnings" should both map to "show_pe".
+Examples of mappings:
+- "stress test bear case", "bear case", "test downside" -> "stress_test_bear"
+- "stress test bull case", "bull case", "test upside" -> "stress_test_bull"
+- "base case", "reset scenario", "reset stress test" -> "stress_test_base"
+- "show dcf terrain", "discounted cash flow", "dcf model", "show dcf" -> "show_dcf"
+- "show peer scatter", "compare peers", "show peers", "peer analysis" -> "show_peers"
+- "show dupont tree", "dupont decomposition", "dupont" -> "show_dupont"
+- "show volume profile", "show vpvr", "volume shelves", "poc" -> "show_vpvr"
+- "switch to trader", "trader mode", "timing mode", "show candlesticks" -> "switch_trader"
+- "switch to investor", "investor mode", "valuation mode", "thesis lab" -> "switch_investor"
+- "pitch mode", "broadcast mode", "presentation mode", "studio mode" -> "pitch_mode"
+
 If the intent is unclear, use "unknown" and ask for clarification in the message.
 """
 
@@ -214,6 +231,29 @@ async def process_voice_command(transcript: str, ticker: str) -> dict:
     Returns:
         Dict with keys: intent, message, data.
     """
+    # Fast-path deterministic parsing for high-value analyst workflows
+    t_lower = transcript.lower().strip()
+    if any(k in t_lower for k in ["bear case", "stress test bear", "downside scenario"]):
+        return {"intent": "stress_test_bear", "message": f"Stress-testing Bear Case for {ticker}: WACC +1.5%, Growth -1.0%, Margins -2.5%", "data": None}
+    if any(k in t_lower for k in ["bull case", "stress test bull", "upside scenario"]):
+        return {"intent": "stress_test_bull", "message": f"Stress-testing Bull Case for {ticker}: WACC -1.0%, Growth +1.0%, Margins +2.0%", "data": None}
+    if any(k in t_lower for k in ["base case", "reset scenario", "reset stress test", "normal case"]):
+        return {"intent": "stress_test_base", "message": f"Resetting {ticker} to Base Case scenario", "data": None}
+    if any(k in t_lower for k in ["show dcf", "dcf terrain", "discounted cash flow", "valuation surface"]):
+        return {"intent": "show_dcf", "message": f"Opening 3D DCF Sensitivity Terrain for {ticker}", "data": None}
+    if any(k in t_lower for k in ["show peer", "peer scatter", "compare peers", "peer cloud"]):
+        return {"intent": "show_peers", "message": f"Opening 3D Peer Pareto Scatter Cloud for {ticker}", "data": None}
+    if any(k in t_lower for k in ["dupont", "dupont tree", "roe tree"]):
+        return {"intent": "show_dupont", "message": f"Opening 3D DuPont ROE Decomposition for {ticker}", "data": None}
+    if any(k in t_lower for k in ["volume profile", "show vpvr", "vpvr", "volume shelves", "poc"]):
+        return {"intent": "show_vpvr", "message": f"Opening VPVR Institutional Volume Shelves for {ticker}", "data": None}
+    if any(k in t_lower for k in ["switch to trader", "trader mode", "timing mode", "show candlesticks"]):
+        return {"intent": "switch_trader", "message": "Switching to Technical & Catalyst Timing Mode", "data": None}
+    if any(k in t_lower for k in ["switch to investor", "investor mode", "valuation mode", "thesis lab"]):
+        return {"intent": "switch_investor", "message": "Switching to Valuation & Thesis Lab Mode", "data": None}
+    if any(k in t_lower for k in ["pitch mode", "broadcast mode", "presentation mode", "studio mode"]):
+        return {"intent": "pitch_mode", "message": "Toggling Presentation & Pitch Studio Mode", "data": None}
+
     client = _get_client()
 
     user_prompt = f"""The user is currently viewing financial data for {ticker}.
@@ -240,10 +280,15 @@ Parse their intent and respond."""
         return result
 
     except Exception as e:
-        logger.error("Voice command processing error: %s", e)
+        logger.warning("Gemini voice parsing failed, using rule-based fallback for '%s': %s", transcript, e)
+        # Fallback keyword checks
+        if "pe" in t_lower or "ratio" in t_lower:
+            return {"intent": "show_pe", "message": f"Displaying P/E multiple analysis for {ticker}.", "data": None}
+        if "chart" in t_lower or "price" in t_lower:
+            return {"intent": "show_chart", "message": f"Displaying interactive price action for {ticker}.", "data": None}
         return {
             "intent": "unknown",
-            "message": "Sorry, I couldn't understand that. Try saying something like 'Show me the PE ratio'.",
+            "message": "Try commands like 'stress test bull case', 'show DCF terrain', or 'pitch mode'.",
             "data": None,
         }
 
