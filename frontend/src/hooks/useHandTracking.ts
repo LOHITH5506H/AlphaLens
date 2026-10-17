@@ -22,6 +22,8 @@ export function useHandTracking(enabled: boolean = true) {
   const handsRef = useRef<any>(null);
   const cameraRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  /** Guard: set to false during cleanup to prevent send() on a destroyed WASM instance */
+  const isAliveRef = useRef(false);
 
   const pinchStateRef = useRef({ index: false, middle: false });
   const rafRef = useRef<number>(0);
@@ -108,6 +110,9 @@ export function useHandTracking(enabled: boolean = true) {
         return;
     }
 
+    // Mark instance as alive before initializing
+    isAliveRef.current = true;
+
     // Initialize Hands
     const hands = new HandsClass({
       locateFile: (file: string) => {
@@ -140,8 +145,15 @@ export function useHandTracking(enabled: boolean = true) {
 
     const camera = new CameraClass(videoElement, {
       onFrame: async () => {
-        if (handsRef.current && videoRef.current) {
+        // Guard: skip if the instance has been torn down
+        if (!isAliveRef.current || !handsRef.current || !videoRef.current) return;
+        try {
           await handsRef.current.send({ image: videoRef.current });
+        } catch (err: any) {
+          // Swallow "deleted object" / abort errors that can slip through
+          // during the gap between camera.stop() and hands.close()
+          if (!isAliveRef.current) return;
+          console.warn("[AlphaLens] MediaPipe send error (safe to ignore):", err?.message);
         }
       },
       width: 640,
@@ -152,12 +164,26 @@ export function useHandTracking(enabled: boolean = true) {
     cameraRef.current = camera;
 
     return () => {
+      // 1. Mark dead FIRST — prevents any new send() calls
+      isAliveRef.current = false;
+
+      // 2. Stop camera BEFORE closing hands to drain the onFrame pipeline
       if (cameraRef.current) {
         cameraRef.current.stop();
+        cameraRef.current = null;
       }
+
+      // 3. Close hands (destroy WASM) — wrapped in try-catch because the
+      //    WASM module may already be torn down (e.g. React strict-mode double-unmount)
       if (handsRef.current) {
-        handsRef.current.close();
+        try {
+          handsRef.current.close();
+        } catch {
+          // Already destroyed — nothing to do
+        }
+        handsRef.current = null;
       }
+
       if (isCustomVideo && videoElement && videoElement.parentNode) {
         videoElement.parentNode.removeChild(videoElement);
       }
