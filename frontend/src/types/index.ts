@@ -187,9 +187,40 @@ export interface FundamentalMetricResponse {
   data: MetricDataSeries[];
 }
 
+export type VisualizationType =
+  | "waterfall"
+  | "dcf_terrain"
+  | "peer_scatter"
+  | "dupont"
+  | "vpvr"
+  | "ema_ribbon"
+  | "iv_surface"
+  | "monte_carlo"
+  | "contagion_graph";
+
 export interface VisualizationPayload {
   type: string;
   axes: Record<string, string>;
   dimensions: Record<string, any>;
   error?: string | null;
 }
+
+export interface SearchSuggestion {
+  symbol: string;
+  name: string;
+  exchange?: string;
+  sector?: string;
+  score?: number;
+  matchReason?: string;
+  isCorrection?: boolean;
+}
+
+export interface SearchResult {
+  ticker: string;
+  name?: string;
+  query: string;
+  isCorrection?: boolean;
+  matchReason?: string;
+  suggestions?: SearchSuggestion[];
+}
+

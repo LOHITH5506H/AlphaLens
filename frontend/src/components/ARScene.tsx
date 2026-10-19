@@ -34,6 +34,9 @@ interface ARSceneProps {
   onClose?: () => void;
   scenarioParams?: any;
   showLSTMConeInTrader?: boolean;
+  compareTicker?: string | null;
+  compareStockData?: StockData | null;
+  onSelectCompareTicker?: (ticker: string | null) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,6 +59,9 @@ const ARTracker = ({
   stockLoading,
   scenarioParams,
   showLSTMConeInTrader,
+  compareTicker,
+  compareStockData,
+  onSelectCompareTicker,
 }: any) => {
   const { camera } = useThree();
   const groupRef = useRef<THREE.Group>(null);
@@ -99,6 +105,9 @@ const ARTracker = ({
           isLoading={stockLoading} 
           scenarioParams={scenarioParams}
           showLSTMConeInTrader={showLSTMConeInTrader}
+          compareTicker={compareTicker}
+          compareStockData={compareStockData}
+          onSelectCompareTicker={onSelectCompareTicker}
         />
       </group>
     </group>
@@ -169,6 +178,9 @@ export default function ARScene({
   onClose,
   scenarioParams,
   showLSTMConeInTrader,
+  compareTicker,
+  compareStockData,
+  onSelectCompareTicker,
 }: ARSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mindarRef = useRef<any>(null);
@@ -405,6 +417,9 @@ export default function ARScene({
                     isLoading={stockLoading} 
                     scenarioParams={scenarioParams}
                     showLSTMConeInTrader={showLSTMConeInTrader}
+                    compareTicker={compareTicker}
+                    compareStockData={compareStockData}
+                    onSelectCompareTicker={onSelectCompareTicker}
                   />
                 </Center>
               </>
@@ -425,6 +440,9 @@ export default function ARScene({
                 stockLoading={stockLoading}
                 scenarioParams={scenarioParams}
                 showLSTMConeInTrader={showLSTMConeInTrader}
+                compareTicker={compareTicker}
+                compareStockData={compareStockData}
+                onSelectCompareTicker={onSelectCompareTicker}
               />
             )}
 

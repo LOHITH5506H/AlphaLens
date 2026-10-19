@@ -6,7 +6,7 @@ import { useFrame } from "@react-three/fiber";
 import { Text, Float, Line, Billboard, Grid } from "@react-three/drei";
 import { useSpring, a } from "@react-spring/three";
 import type { StockData, AIAnalysis, StockInsights, FundamentalMetricResponse } from "@/types";
-import { VPVRWallWithData, DuPontTreeWithData, WaterfallChartWithData, PeerScatterCloudWithData, DCFTerrainWithData } from "./Visualizations3D";
+import { VPVRWallWithData, DuPontTreeWithData, WaterfallChartWithData, PeerScatterCloudWithData, DCFTerrainWithData, IVSurface3DWithData, ContagionGraph3DWithData, ValuationBattle3D } from "./Visualizations3D";
 import ExternalComparativeBar from "./ComparativeBar";
 import { METRIC_TIMEFRAMES } from "@/lib/constants";
 
@@ -45,6 +45,9 @@ interface Stock3DVisualsProps {
   isLoading?: boolean;
   scenarioParams?: any;
   showLSTMConeInTrader?: boolean;
+  compareTicker?: string | null;
+  compareStockData?: StockData | null;
+  onSelectCompareTicker?: (ticker: string | null) => void;
 }
 
 // ── 1. Sci-Fi Gyroscopic Rotating HUD Ring ─────────────────────────────────
@@ -555,7 +558,21 @@ function AxisBox3D({ width, height, depth }: { width: number; height: number; de
   return null; // Nuked the grid to remove visual clutter
 }
 
+interface HoveredQuarterBar {
+  quarter: string;
+  metricKey: string;
+  metricName: string;
+  value: number;
+  color: string;
+  marginPct?: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
 function QuarterlyFinancials3D({ financials, timeframe }: { financials: any[]; timeframe?: string }) {
+  const [hoveredBar, setHoveredBar] = useState<HoveredQuarterBar | null>(null);
+
   if (!financials || financials.length === 0) return null;
 
   // Slice data based on selected timeframe
@@ -569,51 +586,149 @@ function QuarterlyFinancials3D({ financials, timeframe }: { financials: any[]; t
 
   const visibleFinancials = getVisibleQuarters(financials, timeframe || '1Y');
   const W = 3.6;
-  const Z_SPAN = 1.2;
   const pts = visibleFinancials.length;
   
-  const maxVal = Math.max(...visibleFinancials.flatMap(f => [f.revenue || 0, f.gross_profit || 0, f.operating_income || 0]).map(Math.abs), 1);
+  const maxVal = Math.max(
+    ...visibleFinancials.flatMap((f: any) => [
+      f.revenue || 0,
+      f.gross_profit || 0,
+      f.operating_income || 0,
+    ]).map(Math.abs),
+    1
+  );
   
   const metrics = [
-    { key: "revenue", name: "Revenue", color: "#38bdf8", badge: "🟦" },
-    { key: "gross_profit", name: "Gross Profit", color: "#10b981", badge: "🟩" },
-    { key: "operating_income", name: "Operating Income", color: "#8b5cf6", badge: "🟪" },
+    {
+      key: "revenue",
+      name: "Revenue",
+      color: "#38bdf8",
+      textTint: "#bae6fd",
+      xOffset: -0.32,
+      zOffset: -0.08,
+    },
+    {
+      key: "gross_profit",
+      name: "Gross Profit",
+      color: "#10b981",
+      textTint: "#a7f3d0",
+      xOffset: 0.0,
+      zOffset: 0.0,
+    },
+    {
+      key: "operating_income",
+      name: "Operating Income",
+      color: "#a855f7",
+      textTint: "#e9d5ff",
+      xOffset: 0.32,
+      zOffset: 0.08,
+    },
   ];
 
   return (
     <group position={[0, -0.4, 0]}>
       {/* Title Header */}
       <Billboard position={[-1.7, 2.05, 0]}>
-        <Text fontSize={0.16} color="#00f0ff" anchorX="left">
+        <Text fontSize={0.16} color="#00f0ff" anchorX="left" fontWeight="bold">
           ◈ QUARTERLY FINANCIAL PROGRESSION (3D)
         </Text>
       </Billboard>
 
-      {/* Clean high-contrast 3D/HUD Legend Pill Bar above chart (Fixes overlapping side labels) */}
+      {/* FIX 1: Clean high-contrast 3D/HUD Legend Pill Bar with Real Colored Swatch Meshes */}
       <Billboard position={[0, 1.75, 0]}>
-        <Text fontSize={0.11} color="#ffffff" anchorX="center">
-          🟦 Revenue    🟩 Gross Profit    🟪 Operating Income
-        </Text>
+        <group>
+          {/* Revenue */}
+          <mesh position={[-1.75, 0, 0]}>
+            <boxGeometry args={[0.16, 0.16, 0.04]} />
+            <meshBasicMaterial color="#38bdf8" />
+          </mesh>
+          <Text position={[-1.58, 0, 0]} anchorX="left" anchorY="middle" fontSize={0.12} color="#bae6fd" fontWeight="bold">
+            Revenue
+          </Text>
+
+          {/* Gross Profit */}
+          <mesh position={[-0.45, 0, 0]}>
+            <boxGeometry args={[0.16, 0.16, 0.04]} />
+            <meshBasicMaterial color="#10b981" />
+          </mesh>
+          <Text position={[-0.28, 0, 0]} anchorX="left" anchorY="middle" fontSize={0.12} color="#a7f3d0" fontWeight="bold">
+            Gross Profit
+          </Text>
+
+          {/* Operating Income */}
+          <mesh position={[0.95, 0, 0]}>
+            <boxGeometry args={[0.16, 0.16, 0.04]} />
+            <meshBasicMaterial color="#a855f7" />
+          </mesh>
+          <Text position={[1.12, 0, 0]} anchorX="left" anchorY="middle" fontSize={0.12} color="#e9d5ff" fontWeight="bold">
+            Operating Income
+          </Text>
+        </group>
       </Billboard>
 
-      {metrics.map((m, zIdx) => {
-        const z = -Z_SPAN + (zIdx / (metrics.length - 1)) * Z_SPAN;
-        const isTarget = zIdx === metrics.length - 1; // Operating Income is in front and opaque
+      {/* Interactive Raycast Hover Telemetry Card */}
+      {hoveredBar && (
+        <Billboard position={[hoveredBar.x, Math.max(hoveredBar.y + 0.55, 1.35), hoveredBar.z]}>
+          <mesh position={[0, 0, -0.01]}>
+            <planeGeometry args={[2.7, 0.46]} />
+            <meshBasicMaterial color="#020617" opacity={0.94} transparent />
+          </mesh>
+          <Text fontSize={0.11} color={hoveredBar.color} fontWeight="bold" anchorX="center" position={[0, 0.08, 0.01]}>
+            {`${hoveredBar.quarter} · ${hoveredBar.metricName}: ${formatCurrencyCompact(hoveredBar.value)}`}
+          </Text>
+          <Text fontSize={0.095} color="#38bdf8" anchorX="center" position={[0, -0.09, 0.01]}>
+            {hoveredBar.metricKey === "gross_profit"
+              ? `Gross Margin: ${hoveredBar.marginPct?.toFixed(1)}% of Revenue`
+              : hoveredBar.metricKey === "operating_income"
+              ? `Operating Margin: ${hoveredBar.marginPct?.toFixed(1)}% of Revenue`
+              : `Quarterly Top-Line Scale: 100%`}
+          </Text>
+        </Billboard>
+      )}
+
+      {/* Ground Reference Axis Baseline */}
+      <Line points={[new THREE.Vector3(-2.3, 0, 0), new THREE.Vector3(2.3, 0, 0)]} color="#334155" lineWidth={1} />
+
+      {/* FIX 2: Side-by-Side Clustered Bars across Quarters */}
+      {visibleFinancials.map((f: any, i: number) => {
+        const quarterCenterX = -W / 2 + (i / Math.max(pts - 1, 1)) * W;
+        const dateLabel = formatQuarterLabel(f.quarter || f.date || "");
+        const rev = Math.max(f.revenue || 0, 1);
+        const grossMargin = ((f.gross_profit || 0) / rev) * 100;
+        const opMargin = ((f.operating_income || 0) / rev) * 100;
+
         return (
-          <group key={m.key}>
-            {visibleFinancials.map((f, i) => {
+          <group key={i}>
+            {/* Centered Quarter Date Label below cluster */}
+            <Billboard position={[quarterCenterX, -0.28, 0.22]}>
+              <Text fontSize={0.12} color="#94a3b8" anchorX="center" anchorY="top" fontWeight="bold">
+                {dateLabel}
+              </Text>
+            </Billboard>
+
+            {/* 3 Grouped Bars: Revenue (Left), Gross Profit (Center), Operating Income (Right) */}
+            {metrics.map((m) => {
               const val = f[m.key] || 0;
-              const x = -W/2 + (i / Math.max(pts - 1, 1)) * W;
-              const h = Math.max((Math.abs(val) / maxVal) * 1.5, 0.05);
-              const yPos = val < 0 ? -h/2 : h/2;
-              const dateLabel = formatQuarterLabel(f.quarter || f.date || '');
+              const barX = quarterCenterX + m.xOffset;
+              const barZ = m.zOffset;
+              const h = Math.max((Math.abs(val) / maxVal) * 1.5, 0.06);
+              const yPos = val < 0 ? -h / 2 : h / 2;
+              const marginPct = m.key === "gross_profit" ? grossMargin : m.key === "operating_income" ? opMargin : 100;
+
               return (
-                <InternalComparativeBar 
-                  key={i}
-                  x={x} yPos={yPos} z={z} h={h} 
-                  color={m.color} isTarget={isTarget} 
-                  name={m.name} value={val} label={dateLabel} 
-                  zIdx={zIdx}
+                <QuarterlyBarNode
+                  key={m.key}
+                  x={barX}
+                  yPos={yPos}
+                  z={barZ}
+                  h={h}
+                  val={val}
+                  color={m.color}
+                  textTint={m.textTint}
+                  metricKey={m.key}
+                  metricName={m.name}
+                  quarter={dateLabel}
+                  marginPct={marginPct}
+                  onHover={setHoveredBar}
                 />
               );
             })}
@@ -621,6 +736,110 @@ function QuarterlyFinancials3D({ financials, timeframe }: { financials: any[]; t
         );
       })}
     </group>
+  );
+}
+
+function QuarterlyBarNode({
+  x,
+  yPos,
+  z,
+  h,
+  val,
+  color,
+  textTint,
+  metricKey,
+  metricName,
+  quarter,
+  marginPct,
+  onHover,
+}: {
+  x: number;
+  yPos: number;
+  z: number;
+  h: number;
+  val: number;
+  color: string;
+  textTint: string;
+  metricKey: string;
+  metricName: string;
+  quarter: string;
+  marginPct: number;
+  onHover: (info: HoveredQuarterBar | null) => void;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+
+  const props = useSpring({
+    position: [x, yPos, z] as [number, number, number],
+    scale: (isHovered ? [0.29, h, 0.29] : [0.26, h, 0.26]) as [number, number, number],
+  });
+
+  const labelY = val < 0 ? -h / 2 - 0.22 : h / 2 + 0.22;
+
+  return (
+    <a.group position={props.position}>
+      {/* 3D Bar Mesh */}
+      <a.mesh
+        scale={props.scale}
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          setIsHovered(true);
+          onHover({
+            quarter,
+            metricKey,
+            metricName,
+            value: val,
+            color,
+            marginPct,
+            x,
+            y: yPos + h / 2,
+            z,
+          });
+        }}
+        onPointerOut={() => {
+          setIsHovered(false);
+          onHover(null);
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsHovered(true);
+          onHover({
+            quarter,
+            metricKey,
+            metricName,
+            value: val,
+            color,
+            marginPct,
+            x,
+            y: yPos + h / 2,
+            z,
+          });
+        }}
+      >
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={isHovered ? 0.8 : 0.35}
+          transparent
+          opacity={isHovered ? 1.0 : 0.88}
+        />
+      </a.mesh>
+
+      {/* Wireframe Outline on Hover */}
+      {isHovered && (
+        <mesh scale={[0.31, h + 0.05, 0.31]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.7} />
+        </mesh>
+      )}
+
+      {/* Directly aligned Dollar Value Label (Color-tinted, in its own column) */}
+      <Billboard position={[0, labelY, 0]}>
+        <Text fontSize={0.11} color={textTint} anchorX="center" anchorY="middle" fontWeight="bold">
+          {formatCurrencyCompact(val)}
+        </Text>
+      </Billboard>
+    </a.group>
   );
 }
 
@@ -839,26 +1058,40 @@ function CandlestickVisuals({
   activeIndicators, 
   showLSTMCone = false, 
   scenarioParams, 
-  stockInsights 
+  stockInsights,
+  primarySymbol = "NVDA",
+  compareTicker,
+  compareStockData,
 }: { 
   candlesticks: any[]; 
   activeIndicators?: Record<string, boolean>; 
   showLSTMCone?: boolean; 
   scenarioParams?: any; 
   stockInsights?: any; 
+  primarySymbol?: string;
+  compareTicker?: string | null;
+  compareStockData?: StockData | null;
 }) {
   const pts = candlesticks.slice(-40); // last 40 days
-  const minLow = Math.min(...pts.map(c => c.low));
-  const maxHigh = Math.max(...pts.map(c => c.high));
+  const minLow = Math.min(...pts.map((c: any) => c.low));
+  const maxHigh = Math.max(...pts.map((c: any) => c.high));
   const range = Math.max(maxHigh - minLow, 0.01);
   const mid = (maxHigh + minLow) / 2;
   const W = 3.6;
+  const candleSpacing = W / Math.max(pts.length - 1, 1);
+
+  // 3D Y-Axis Price Scale Ladder: 5 evenly spaced levels
+  const step = range / 4;
+  const yLadderLevels = [0, 1, 2, 3, 4].map((idx) => minLow + idx * step);
+
+  // Interactive Hover State
+  const [hoveredCandleIdx, setHoveredCandleIdx] = useState<number | null>(null);
+  const [hoveredLstmDay, setHoveredLstmDay] = useState<number | null>(null);
 
   // Simple Moving Average
   const smaPoints = useMemo(() => {
     return pts.map((c, i) => {
       const x = -W/2 + (i / Math.max(pts.length - 1, 1)) * W;
-      // Mock SMA value closely tracking close
       const val = (c.close + c.open) / 2;
       const y = ((val - mid) / range) * 1.8;
       return new THREE.Vector3(x, y, 0.1);
@@ -878,13 +1111,25 @@ function CandlestickVisuals({
     const waccDelta = scenarioParams?.wacc_delta || 0;
     const tgrDelta = scenarioParams?.tgr_delta || 0;
     const marginDelta = scenarioParams?.margin_delta || 0;
+    const explicitDrift = scenarioParams?.lstm_drift;
     
-    // Base bias: bull case +0.025/day, bear case -0.025/day, base case slight upward momentum
-    const sentimentBias = (stockInsights?.sentiment_score || 0) * 0.0002;
-    let scenarioBias = 0.003;
-    if (activeScen === "bull") scenarioBias = 0.022;
-    if (activeScen === "bear") scenarioBias = -0.022;
-    scenarioBias += tgrDelta * 2.0 - waccDelta * 1.8 + marginDelta * 1.5 + sentimentBias;
+    // Fundamental & sentiment influence on 5-day cumulative drift
+    const sentimentBias = ((stockInsights?.sentiment_score || 50) - 50) * 0.0003;
+    const fundamentalShock = (tgrDelta * 0.8 - waccDelta * 0.8 + marginDelta * 0.5);
+
+    let rawDrift = 0.025; // Default modest upward base drift (~2.5% over 5D)
+    if (typeof explicitDrift === "number" && !isNaN(explicitDrift) && explicitDrift !== 0) {
+      rawDrift = explicitDrift + fundamentalShock;
+    } else if (activeScen === "bull") {
+      rawDrift = 0.045 + fundamentalShock + sentimentBias;
+    } else if (activeScen === "bear") {
+      rawDrift = -0.045 + fundamentalShock + sentimentBias;
+    } else {
+      rawDrift = 0.025 + fundamentalShock + sentimentBias;
+    }
+
+    // Clamp total 5-day cumulative return percentage strictly to [-8.0%, +8.0%]
+    const total5DayReturnPct = Math.max(-0.08, Math.min(0.08, rawDrift));
 
     const days = [1, 2, 3, 4, 5];
     const trajPts: THREE.Vector3[] = [new THREE.Vector3(lastX, lastY, 0.05)];
@@ -893,16 +1138,19 @@ function CandlestickVisuals({
     const steps: { x: number; y: number; upperY: number; lowerY: number; day: number; price: number }[] = [];
 
     days.forEach((d) => {
-      const x = lastX + (d / 5) * 0.95;
-      const expectedMovePct = scenarioBias * d;
+      const progress = d / 5;
+      const expectedMovePct = total5DayReturnPct * progress;
       const projPrice = last.close * (1 + expectedMovePct);
-      const projY = ((projPrice - mid) / range) * 1.8;
+      const rawProjY = ((projPrice - mid) / range) * 1.8;
       
-      const volSpreadPct = 0.014 * Math.sqrt(d);
-      const volSpreadUnits = (volSpreadPct * last.close / range) * 1.8;
+      const projY = Math.max(lastY - 1.2, Math.min(lastY + 1.2, rawProjY));
+      const x = lastX + progress * 0.95;
       
-      const uY = projY + volSpreadUnits;
-      const lY = projY - volSpreadUnits;
+      const volSpreadPct = 0.012 * Math.sqrt(d);
+      const volSpreadUnits = Math.min(0.35, (volSpreadPct * last.close / range) * 1.8);
+      
+      const uY = Math.max(lastY - 1.35, Math.min(lastY + 1.35, projY + volSpreadUnits));
+      const lY = Math.max(lastY - 1.35, Math.min(lastY + 1.35, projY - volSpreadUnits));
       
       trajPts.push(new THREE.Vector3(x, projY, 0.05));
       upperPts.push([x, uY, 0.05]);
@@ -922,7 +1170,7 @@ function CandlestickVisuals({
       finalStep,
       activeScen,
       targetPrice: finalStep.price,
-      pctChange: ((finalStep.price - last.close) / last.close) * 100,
+      pctChange: total5DayReturnPct * 100,
     };
   }, [showLSTMCone, pts, mid, range, W, scenarioParams, stockInsights]);
 
@@ -930,7 +1178,7 @@ function CandlestickVisuals({
   const upperBands = useMemo(() => {
     return pts.map((c, i) => {
       const x = -W/2 + (i / Math.max(pts.length - 1, 1)) * W;
-      const val = c.high + range * 0.1; // mock std dev offset
+      const val = c.high + range * 0.1;
       return new THREE.Vector3(x, ((val - mid) / range) * 1.8, 0.05);
     });
   }, [pts, mid, range, W]);
@@ -943,12 +1191,68 @@ function CandlestickVisuals({
     });
   }, [pts, mid, range, W]);
 
+  const lastCandle = pts[pts.length - 1];
+  const lastCloseY = lastCandle ? ((lastCandle.close - mid) / range) * 1.8 : 0;
+
   return (
     <group position={[0, 0, 0]}>
+      {/* ── 3D Y-Axis Price Scale Ladder & Horizontal Reference Grid Lines ── */}
+      {yLadderLevels.map((lvl, idx) => {
+        const yLvl = ((lvl - mid) / range) * 1.8;
+        return (
+          <group key={`y-level-${idx}`}>
+            {/* Horizontal Grid Line across chart backplane (Z = -0.08) */}
+            <Line
+              points={[
+                [-W / 2, yLvl, -0.08],
+                [W / 2 + 0.1, yLvl, -0.08],
+              ]}
+              color="#334155"
+              lineWidth={1}
+              opacity={0.4}
+              transparent
+            />
+            {/* Left Y-Axis Price Scale Label (x = -W/2 - 0.55) backed by dark pill plate */}
+            <Billboard position={[-W / 2 - 0.55, yLvl, 0.05]}>
+              <mesh position={[-0.32, 0, -0.01]}>
+                <planeGeometry args={[0.62, 0.20]} />
+                <meshBasicMaterial color="#020617" opacity={0.88} transparent />
+              </mesh>
+              <Text fontSize={0.11} color="#94a3b8" anchorX="right" anchorY="middle">
+                {`$${lvl.toFixed(2)}`}
+              </Text>
+            </Billboard>
+          </group>
+        );
+      })}
+
+      {/* Glowing Live Spot Price Tag on right edge */}
+      {lastCandle && (
+        <Billboard position={[W / 2 + 0.55, lastCloseY, 0.05]}>
+          <mesh position={[0.35, 0, -0.01]}>
+            <planeGeometry args={[0.95, 0.24]} />
+            <meshBasicMaterial color="#020617" opacity={0.92} transparent />
+          </mesh>
+          <Text
+            position={[0.35, 0, 0.01]}
+            fontSize={0.10}
+            color="#22d3ee"
+            fontWeight="bold"
+            anchorX="center"
+            anchorY="middle"
+          >
+            {`Spot: $${lastCandle.close.toFixed(2)}`}
+          </Text>
+        </Billboard>
+      )}
+
+      {/* ── 3D Candlesticks with Interaction Hitbox & Crosshair Telemetry ── */}
       {pts.map((c, i) => {
         const x = -W/2 + (i / Math.max(pts.length - 1, 1)) * W;
         const isBull = c.close >= c.open;
-        const color = isBull ? "#10B981" : "#EF4444";
+        const baseColor = isBull ? "#10B981" : "#EF4444";
+        const isHovered = hoveredCandleIdx === i;
+        const color = isHovered ? "#38bdf8" : baseColor;
         
         const openY = ((c.open - mid) / range) * 1.8;
         const closeY = ((c.close - mid) / range) * 1.8;
@@ -963,16 +1267,78 @@ function CandlestickVisuals({
         
         return (
           <group key={i} position={[x, 0, 0]}>
-            {/* Body */}
-            <mesh position={[0, bodyY, 0.05]}>
-              <boxGeometry args={[0.06, bodyH, 0.06]} />
-              <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} />
+            {/* Invisible Raycast Hitbox Mesh */}
+            <mesh
+              position={[0, 0, 0.05]}
+              onPointerOver={(e) => {
+                e.stopPropagation();
+                setHoveredCandleIdx(i);
+                setHoveredLstmDay(null);
+              }}
+              onPointerOut={() => setHoveredCandleIdx((prev) => (prev === i ? null : prev))}
+              onClick={(e) => {
+                e.stopPropagation();
+                setHoveredCandleIdx(i);
+              }}
+            >
+              <boxGeometry args={[Math.max(candleSpacing * 0.9, 0.14), 2.2, 0.35]} />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
+
+            {/* Candle Body: scaled 1.35x when hovered */}
+            <mesh position={[0, bodyY, 0.05]} scale={isHovered ? [1.35, 1.35, 1.35] : [1, 1, 1]}>
+              <boxGeometry args={[0.06, bodyH, 0.06]} />
+              <meshStandardMaterial
+                color={color}
+                emissive={color}
+                emissiveIntensity={isHovered ? 1.0 : 0.5}
+              />
+            </mesh>
+
             {/* Wick */}
             <mesh position={[0, wickY, 0.05]}>
               <cylinderGeometry args={[0.01, 0.01, wickH, 4]} />
               <meshStandardMaterial color={color} />
             </mesh>
+
+            {/* 3D Spatial Crosshair on Hover */}
+            {isHovered && (
+              <>
+                {/* Vertical Cyan Line passing through candle.x */}
+                <Line
+                  points={[
+                    [0, -1.1, 0.06],
+                    [0, 1.1, 0.06],
+                  ]}
+                  color="#00f0ff"
+                  lineWidth={2}
+                  opacity={0.85}
+                  transparent
+                />
+                {/* Horizontal Cyan Line at closeY extending to left Y-axis */}
+                <Line
+                  points={[
+                    [-W / 2 - 0.55 - x, closeY, 0.06],
+                    [W / 2 + 0.1 - x, closeY, 0.06],
+                  ]}
+                  color="#00f0ff"
+                  lineWidth={2}
+                  opacity={0.85}
+                  transparent
+                />
+                {/* Highlighted Price Pill Tag at left Y-axis */}
+                <Billboard position={[-W / 2 - 0.55 - x, closeY, 0.08]}>
+                  <mesh position={[-0.34, 0, -0.01]}>
+                    <planeGeometry args={[0.68, 0.22]} />
+                    <meshBasicMaterial color="#06b6d4" opacity={0.95} transparent />
+                  </mesh>
+                  <Text fontSize={0.11} color="#020617" fontWeight="bold" anchorX="right" anchorY="middle">
+                    {`$${c.close.toFixed(2)}`}
+                  </Text>
+                </Billboard>
+              </>
+            )}
+
             {/* Time labels every 10 points - Billboarded for clarity */}
             {i % 10 === 0 && (
               <Billboard position={[0, -1.2, 0]}>
@@ -984,6 +1350,82 @@ function CandlestickVisuals({
           </group>
         );
       })}
+
+      {/* Floating 3D OHLCV Telemetry Card above chart on Candle Hover */}
+      {hoveredCandleIdx !== null && pts[hoveredCandleIdx] && (() => {
+        const c = pts[hoveredCandleIdx];
+        const candleChangePct = ((c.close - c.open) / c.open) * 100;
+        const smaVal = (c.close + c.open) / 2;
+        const pocVal =
+          stockInsights?.insights?.thesis_summary?.volume_poc ??
+          pts[pts.length - 1].close * 0.98;
+        const vsPocPct = ((c.close - pocVal) / pocVal) * 100;
+
+        return (
+          <Billboard position={[0, 1.8 / 2 + 0.85, 0.3]}>
+            <mesh position={[0, 0, -0.01]}>
+              <planeGeometry args={[3.8, 0.74]} />
+              <meshBasicMaterial color="#020617" opacity={0.95} transparent />
+            </mesh>
+            <Line
+              points={[
+                [-1.9, -0.37, 0],
+                [1.9, -0.37, 0],
+                [1.9, 0.37, 0],
+                [-1.9, 0.37, 0],
+                [-1.9, -0.37, 0],
+              ]}
+              color="#00f0ff"
+              lineWidth={1.5}
+            />
+            <Text position={[-1.75, 0.21, 0.01]} fontSize={0.105} color="#00f0ff" anchorX="left" fontWeight="bold">
+              {`📅 ${c.date.substring(0, 10)}  |  Close: $${c.close.toFixed(2)} (${candleChangePct >= 0 ? "+" : ""}${candleChangePct.toFixed(2)}% vs Open)`}
+            </Text>
+            <Text position={[-1.75, 0.02, 0.01]} fontSize={0.095} color="#e2e8f0" anchorX="left">
+              {`O: $${c.open.toFixed(2)}   H: $${c.high.toFixed(2)}   L: $${c.low.toFixed(2)}   Vol: ${c.volume ? (c.volume / 1e6).toFixed(1) + "M" : "N/A"}`}
+            </Text>
+            <Text position={[-1.75, -0.17, 0.01]} fontSize={0.085} color="#94a3b8" anchorX="left">
+              {`SMA20: $${smaVal.toFixed(2)}  |  vs POC Shelf: ${vsPocPct >= 0 ? "+" : ""}${vsPocPct.toFixed(1)}%`}
+            </Text>
+          </Billboard>
+        );
+      })()}
+
+      {/* Floating 3D LSTM Telemetry Card on Forecast Sphere Hover */}
+      {hoveredLstmDay !== null && lstmForecast && (() => {
+        const s = lstmForecast.steps.find((st) => st.day === hoveredLstmDay);
+        if (!s) return null;
+        const lastClose = pts[pts.length - 1].close;
+        const movePct = ((s.price - lastClose) / lastClose) * 100;
+        const lowBandPrice = mid + (s.lowerY / 1.8) * range;
+        const highBandPrice = mid + (s.upperY / 1.8) * range;
+
+        return (
+          <Billboard position={[0, 1.8 / 2 + 0.85, 0.3]}>
+            <mesh position={[0, 0, -0.01]}>
+              <planeGeometry args={[3.8, 0.65]} />
+              <meshBasicMaterial color="#020617" opacity={0.95} transparent />
+            </mesh>
+            <Line
+              points={[
+                [-1.9, -0.32, 0],
+                [1.9, -0.32, 0],
+                [1.9, 0.32, 0],
+                [-1.9, 0.32, 0],
+                [-1.9, -0.32, 0],
+              ]}
+              color="#00f0ff"
+              lineWidth={1.5}
+            />
+            <Text position={[-1.75, 0.14, 0.01]} fontSize={0.105} color="#00f0ff" anchorX="left" fontWeight="bold">
+              {`✨ AI LSTM FORECAST (DAY +${s.day})  |  Projected: $${s.price.toFixed(2)} (${movePct >= 0 ? "+" : ""}${movePct.toFixed(1)}% vs Spot)`}
+            </Text>
+            <Text position={[-1.75, -0.11, 0.01]} fontSize={0.095} color="#34d399" anchorX="left">
+              {`95% Confidence Band: [$${lowBandPrice.toFixed(2)} Low  —  $${highBandPrice.toFixed(2)} High]`}
+            </Text>
+          </Billboard>
+        );
+      })()}
 
       {activeIndicators?.sma && (
         <mesh position={[0, 0, 0.1]}>
@@ -1005,7 +1447,6 @@ function CandlestickVisuals({
              <Text fontSize={0.12} color="#f472b6" anchorX="left">MACD</Text>
           </Billboard>
           {pts.map((c, i) => {
-            // Mock MACD Histogram
             const x = -W/2 + (i / Math.max(pts.length - 1, 1)) * W;
             const wave = Math.sin(i * 0.5) * 0.3;
             const h = Math.abs(wave);
@@ -1055,12 +1496,25 @@ function CandlestickVisuals({
             gapSize={0.03} 
           />
 
-          {/* Forecast Days Markers */}
+          {/* Forecast Days Markers with Pointer Hover Detection */}
           {lstmForecast.steps.map((s, idx) => (
-            <group key={idx} position={[s.x, s.y, 0.05]}>
-              <mesh>
-                <sphereGeometry args={[0.025, 12, 12]} />
-                <meshStandardMaterial color="#00f0ff" emissive="#00f0ff" emissiveIntensity={0.6} />
+            <group
+              key={idx}
+              position={[s.x, s.y, 0.05]}
+              onPointerOver={(e) => {
+                e.stopPropagation();
+                setHoveredLstmDay(s.day);
+                setHoveredCandleIdx(null);
+              }}
+              onPointerOut={() => setHoveredLstmDay((prev) => (prev === s.day ? null : prev))}
+            >
+              <mesh scale={hoveredLstmDay === s.day ? [1.6, 1.6, 1.6] : [1, 1, 1]}>
+                <sphereGeometry args={[0.028, 16, 16]} />
+                <meshStandardMaterial
+                  color={hoveredLstmDay === s.day ? "#38bdf8" : "#00f0ff"}
+                  emissive={hoveredLstmDay === s.day ? "#38bdf8" : "#00f0ff"}
+                  emissiveIntensity={hoveredLstmDay === s.day ? 1.0 : 0.6}
+                />
               </mesh>
               <Billboard position={[0, -0.15, 0]}>
                 <Text fontSize={0.07} color="#94a3b8" anchorX="center">
@@ -1088,6 +1542,116 @@ function CandlestickVisuals({
           </Billboard>
         </group>
       )}
+
+      {/* ── ⚔️ DUAL-TICKER BATTLE MODE OVERLAY (Normalized Price & LSTM Race) ── */}
+      {compareTicker && compareStockData && (() => {
+        const rCandles =
+          compareStockData.candlesticks && compareStockData.candlesticks.length > 0
+            ? compareStockData.candlesticks.slice(-40)
+            : pts;
+        if (!rCandles || rCandles.length === 0) return null;
+
+        const pStart = pts[0].close;
+        const rStart = rCandles[0].close;
+        const pReturn = ((pts[pts.length - 1].close - pStart) / pStart) * 100;
+        const rReturn = ((rCandles[rCandles.length - 1].close - rStart) / rStart) * 100;
+        const startY = ((pStart - mid) / range) * 1.8;
+
+        const rivalTrajectoryPoints: THREE.Vector3[] = [];
+        for (let k = 0; k < pts.length; k++) {
+          const rC = rCandles[Math.min(k, rCandles.length - 1)];
+          const rPct = (rC.close - rStart) / rStart;
+          const rx = -W / 2 + (k / Math.max(pts.length - 1, 1)) * W;
+          const ry = startY + rPct * 2.8;
+          rivalTrajectoryPoints.push(new THREE.Vector3(rx, ry, -0.35));
+        }
+        const rivalCurve = new THREE.CatmullRomCurve3(rivalTrajectoryPoints);
+        const lastRivalPt = rivalTrajectoryPoints[rivalTrajectoryPoints.length - 1];
+
+        // 5-Day forecast fan for rival
+        const rivalDriftPct = rReturn >= 0 ? 0.03 : -0.02;
+        const rivalForecastSteps = [1, 2, 3, 4, 5].map((d) => {
+          const progress = d / 5;
+          const rx = lastRivalPt.x + progress * 0.95;
+          const ry = lastRivalPt.y + rivalDriftPct * progress * 2.5;
+          return { day: d, x: rx, y: ry };
+        });
+        const rivalUpperLine: [number, number, number][] = [
+          [lastRivalPt.x, lastRivalPt.y, -0.35],
+          ...rivalForecastSteps.map((s) => [s.x, s.y + 0.15, -0.35] as [number, number, number]),
+        ];
+        const rivalLowerLine: [number, number, number][] = [
+          [lastRivalPt.x, lastRivalPt.y, -0.35],
+          ...rivalForecastSteps.map((s) => [s.x, s.y - 0.15, -0.35] as [number, number, number]),
+        ];
+
+        const winnerTicker = pReturn >= rReturn ? (primarySymbol || "PRIMARY") : compareTicker;
+
+        return (
+          <group position={[0, 0, 0]}>
+            {/* 3D Head-to-Head Technical Scoreboard */}
+            <Billboard position={[0, 1.8 / 2 + 1.35, 0.35]}>
+              <mesh position={[0, 0, -0.01]}>
+                <planeGeometry args={[4.4, 0.7]} />
+                <meshBasicMaterial color="#020617" opacity={0.96} transparent />
+              </mesh>
+              <Line
+                points={[
+                  [-2.2, -0.35, 0],
+                  [2.2, -0.35, 0],
+                  [2.2, 0.35, 0],
+                  [-2.2, 0.35, 0],
+                  [-2.2, -0.35, 0],
+                ]}
+                color="#f59e0b"
+                lineWidth={2}
+              />
+              <Text position={[0, 0.15, 0.01]} fontSize={0.105} color="#f59e0b" fontWeight="bold" anchorX="center">
+                {`⚔️ MOMENTUM BATTLE: ${primarySymbol || "PRIMARY"} ($${pts[pts.length - 1].close.toFixed(2)})  vs  ${compareTicker} ($${(compareStockData.price ?? rCandles[rCandles.length - 1].close).toFixed(2)})`}
+              </Text>
+              <Text position={[0, -0.12, 0.01]} fontSize={0.09} color="#e2e8f0" anchorX="center">
+                {`Period Return: ${primarySymbol || "PRI"} ${pReturn >= 0 ? "+" : ""}${pReturn.toFixed(1)}% vs ${compareTicker} ${rReturn >= 0 ? "+" : ""}${rReturn.toFixed(1)}%  |  5D LSTM Edge: ${winnerTicker}`}
+              </Text>
+            </Billboard>
+
+            {/* Rival Normalized Price Trajectory Tube at Z = -0.35 */}
+            <mesh position={[0, 0, 0]}>
+              <tubeGeometry args={[rivalCurve, 48, 0.02, 8, false]} />
+              <meshStandardMaterial color="#f59e0b" emissive="#f59e0b" emissiveIntensity={0.8} />
+            </mesh>
+
+            {/* Rival Label at start */}
+            <Billboard position={[-W / 2, startY, -0.35]}>
+              <mesh position={[0, 0, -0.01]}>
+                <planeGeometry args={[0.7, 0.2]} />
+                <meshBasicMaterial color="#020617" opacity={0.9} transparent />
+              </mesh>
+              <Text fontSize={0.08} color="#f59e0b" fontWeight="bold" anchorX="center" anchorY="middle">
+                {`${compareTicker} Base`}
+              </Text>
+            </Billboard>
+
+            {/* Rival LSTM Forecast Fan Lines */}
+            <Line points={rivalUpperLine} color="#fbbf24" lineWidth={1.5} dashed dashScale={10} dashSize={0.05} gapSize={0.03} />
+            <Line points={rivalLowerLine} color="#fbbf24" lineWidth={1.5} dashed dashScale={10} dashSize={0.05} gapSize={0.03} />
+
+            {/* Rival Forecast Steps */}
+            {rivalForecastSteps.map((s, idx) => (
+              <group key={`rstep-${idx}`} position={[s.x, s.y, -0.35]}>
+                <mesh>
+                  <sphereGeometry args={[0.024, 12, 12]} />
+                  <meshStandardMaterial color="#f59e0b" emissive="#f59e0b" emissiveIntensity={0.8} />
+                </mesh>
+                <Billboard position={[0, -0.15, 0]}>
+                  <Text fontSize={0.065} color="#fbbf24" anchorX="center">
+                    {`+${s.day}D`}
+                  </Text>
+                </Billboard>
+              </group>
+            ))}
+          </group>
+        );
+      })()}
     </group>
   );
 }
@@ -1099,10 +1663,9 @@ function TimeframeSelector3D({ active, onChange, activeMetric }: { active?: stri
   if (timeframes.length === 0) return null;
 
   return (
-    <group position={[0, -1.85, 0.4]}>
+    <group position={[0, -2.40, 0.4]}>
       {timeframes.map((tf, i) => {
         const isActive = active === tf || (active === '1Yr' && tf === '1Y');
-        const color = isActive ? "#00f0ff" : "#cbd5e1";
         const offset = (timeframes.length - 1) / 2;
         return (
           <group 
@@ -1114,16 +1677,16 @@ function TimeframeSelector3D({ active, onChange, activeMetric }: { active?: stri
             <mesh>
               <boxGeometry args={[0.48, 0.26, 0.06]} />
               <meshStandardMaterial 
-                color={isActive ? "#0284c7" : "#0f172a"} 
-                emissive={isActive ? "#00f0ff" : "#1e293b"} 
-                emissiveIntensity={isActive ? 0.65 : 0.15} 
+                color={isActive ? "#22d3ee" : "#0f172a"} 
+                emissive={isActive ? "#06b6d4" : "#1e293b"} 
+                emissiveIntensity={isActive ? 0.8 : 0.15} 
                 roughness={0.2}
               />
             </mesh>
             <Text 
-              position={[0, 0, 0.04]} 
+              position={[0, 0, 0.045]} 
               fontSize={0.10} 
-              color={color} 
+              color={isActive ? "#020617" : "#cbd5e1"} 
               anchorX="center" 
               anchorY="middle"
               fontWeight="bold"
@@ -1152,6 +1715,9 @@ export default function Stock3DVisuals({
   isLoading,
   scenarioParams,
   showLSTMConeInTrader,
+  compareTicker,
+  compareStockData,
+  onSelectCompareTicker,
 }: Stock3DVisualsProps) {
   const coreRef = useRef<THREE.Group>(null);
   const mainGroupRef = useRef<THREE.Group>(null);
@@ -1318,6 +1884,7 @@ export default function Stock3DVisuals({
         {/* Global Grid & Timeframes — contextual to active view */}
         <AxisBox3D width={4.2} height={2.5} depth={2.5} />
         {(() => {
+          if (activeMetric === 'IV_SURFACE') return null;
           // Determine which timeframe key to use for the selector
           const isDefaultInvestorView = activeTab === 'Investor' && 
             ['INTRADAY', 'MARKET_CAP', 'DAY_RANGE'].includes(activeMetric);
@@ -1330,7 +1897,9 @@ export default function Stock3DVisuals({
         {/* STRICT SINGLE VISUALIZATION RENDERER */}
         {activeTab === "Trader" ? (
             <group>
-                {data.candlesticks && data.candlesticks.length > 0 ? (
+                {activeMetric === "IV_SURFACE" ? (
+                    <IVSurface3DWithData ticker={data.symbol} scenarioParams={scenarioParams} />
+                ) : data.candlesticks && data.candlesticks.length > 0 ? (
                     <group scale={[1.35, 1.35, 1.35]}>
                         <CandlestickVisuals 
                           candlesticks={data.candlesticks} 
@@ -1338,12 +1907,16 @@ export default function Stock3DVisuals({
                           showLSTMCone={showLSTMConeInTrader}
                           scenarioParams={scenarioParams}
                           stockInsights={stockInsights}
+                          primarySymbol={data.symbol}
+                          compareTicker={compareTicker}
+                          compareStockData={compareStockData}
                         />
                         {activeMetric === "VPVR" && (() => {
                             const pts = data.candlesticks.slice(-40);
                             const minLow = Math.min(...pts.map((c: any) => c.low));
                             const maxHigh = Math.max(...pts.map((c: any) => c.high));
-                            return <VPVRWallWithData ticker={data.symbol} candleMinPrice={minLow} candleMaxPrice={maxHigh} />;
+                            const pocShelf = (stockInsights as any)?.insights?.thesis_summary?.volume_poc ?? (stockInsights as any)?.thesis_summary?.volume_poc ?? data.thesis_summary?.key_support_poc ?? (data.price ? data.price * 0.98 : undefined);
+                            return <VPVRWallWithData ticker={data.symbol} candleMinPrice={minLow} candleMaxPrice={maxHigh} pocShelf={pocShelf} />;
                         })()}
                     </group>
                 ) : (
@@ -1352,9 +1925,18 @@ export default function Stock3DVisuals({
             </group>
         ) : (
             <group>
-                {isLoading ? null : (
+                {isLoading ? null : compareTicker && compareStockData ? (
+                  <ValuationBattle3D 
+                    primaryStock={data} 
+                    rivalStock={compareStockData} 
+                    primaryInsights={stockInsights} 
+                    scenarioParams={scenarioParams} 
+                  />
+                ) : (
                   <>
-                    {activeMetric === 'DUPONT_TREE' ? (
+                    {activeMetric === 'CONTAGION_GRAPH' ? (
+                        <ContagionGraph3DWithData ticker={data.symbol} scenarioParams={scenarioParams} />
+                    ) : activeMetric === 'DUPONT_TREE' ? (
                         <DuPontTreeWithData ticker={data.symbol} scenarioParams={scenarioParams} />
                     ) : activeMetric === 'WATERFALL' ? (
                         <WaterfallChartWithData ticker={data.symbol} />

@@ -17,6 +17,7 @@ import LoadingOverlay from "./LoadingOverlay";
 import TraderChart from "./TraderChart";
 import ValuationBandsChart from "./ValuationBandsChart";
 import CatalystScenarioEngine from "./CatalystScenarioEngine";
+import { CompanySearch } from "./CompanySearch";
 
 interface ARDashboardProps {
   stockData: StockData | null;
@@ -31,6 +32,7 @@ interface ARDashboardProps {
   activeMetric?: string;
   onTabChange: (tab: "Trader" | "Investor") => void;
   onSelectMetric?: (metric: string) => void;
+  onSelectTicker?: (ticker: string) => void;
   activeIndicators?: Record<string, boolean>;
   onToggleIndicator?: (indicator: string) => void;
   scenarioParams: ScenarioParams;
@@ -40,6 +42,8 @@ interface ARDashboardProps {
   onTogglePitchMode?: () => void;
   showLSTMConeInTrader?: boolean;
   onToggleLSTMCone?: () => void;
+  compareTicker?: string | null;
+  onSelectCompareTicker?: (ticker: string | null) => void;
 }
 
 export default function ARDashboard({
@@ -56,6 +60,7 @@ export default function ARDashboard({
   activeIndicators,
   onTabChange,
   onSelectMetric,
+  onSelectTicker,
   onToggleIndicator,
   scenarioParams,
   onScenarioChange,
@@ -63,6 +68,8 @@ export default function ARDashboard({
   onTogglePitchMode,
   showLSTMConeInTrader = false,
   onToggleLSTMCone,
+  compareTicker,
+  onSelectCompareTicker,
 }: ARDashboardProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -180,7 +187,17 @@ export default function ARDashboard({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-lg">
-                  {stockData.symbol === "AAPL" ? "🍎" : stockData.symbol === "TSLA" ? "⚡" : stockData.symbol === "NVDA" ? "🟢" : "🏢"}
+                  {stockData.symbol === "AAPL"
+                    ? "🍎"
+                    : stockData.symbol === "TSLA"
+                    ? "⚡"
+                    : stockData.symbol === "NVDA"
+                    ? "🟢"
+                    : stockData.symbol === "MSFT"
+                    ? "🪟"
+                    : stockData.symbol === "GOOGL"
+                    ? "🔍"
+                    : "🏢"}
                 </div>
                 <div>
                   <div className="text-sm font-bold text-white leading-tight">
@@ -211,6 +228,80 @@ export default function ARDashboard({
               </div>
             </div>
 
+            {/* Typo-Tolerant Company Search Bar */}
+            <div className="pt-1.5 border-t border-slate-800/80">
+              <CompanySearch
+                compact
+                placeholder="Search or jump to company (e.g. Apple, epp, NVDA)..."
+                onSelectTicker={(ticker) => onSelectTicker?.(ticker)}
+              />
+            </div>
+
+            {/* Quick 1-Click Multi-Ticker Switcher Pill Bar */}
+            <div className="flex items-center gap-1.5 pt-1.5 border-t border-slate-800/80">
+              <span className="text-[9px] uppercase font-bold tracking-wider text-slate-400 shrink-0">
+                Flagship:
+              </span>
+              <div className="grid grid-cols-5 gap-1 w-full">
+                {(["AAPL", "NVDA", "TSLA", "MSFT", "GOOGL"] as const).map((tkr) => {
+                  const isActive = stockData.symbol === tkr;
+                  return (
+                    <button
+                      key={tkr}
+                      onClick={() => onSelectTicker?.(tkr)}
+                      className={`py-1 px-1 rounded-lg text-[10.5px] font-mono font-bold transition-all text-center ${
+                        isActive
+                          ? "bg-cyan-500/20 border border-cyan-400 text-cyan-200 shadow-[0_0_10px_rgba(6,182,212,0.35)] scale-[1.02]"
+                          : "bg-slate-800/50 hover:bg-slate-700/60 border border-slate-700/60 text-slate-400 hover:text-slate-200"
+                      }`}
+                      title={`Switch to ${tkr}`}
+                    >
+                      {tkr}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ⚔️ Dual-Ticker Head-to-Head Battle Mode Row */}
+            <div className="flex items-center gap-1.5 pt-1.5 border-t border-slate-800/80">
+              <span className="text-[9px] uppercase font-bold tracking-wider text-amber-400 shrink-0 flex items-center gap-1">
+                <span>⚔️</span> VS PEER:
+              </span>
+              <div className="grid grid-cols-5 gap-1 w-full">
+                <button
+                  onClick={() => onSelectCompareTicker?.(null)}
+                  className={`py-1 px-1 rounded-lg text-[10px] font-mono font-bold transition-all text-center ${
+                    !compareTicker
+                      ? "bg-slate-700/60 border border-slate-500 text-slate-200 shadow-sm"
+                      : "bg-slate-800/40 hover:bg-slate-700/60 border border-slate-800 text-slate-400 hover:text-slate-200"
+                  }`}
+                  title="Exit Battle Mode"
+                >
+                  OFF
+                </button>
+                {(["AAPL", "NVDA", "TSLA", "MSFT", "GOOGL"] as const)
+                  .filter((t) => t !== stockData.symbol)
+                  .map((rival) => {
+                    const isBattleActive = compareTicker === rival;
+                    return (
+                      <button
+                        key={rival}
+                        onClick={() => onSelectCompareTicker?.(isBattleActive ? null : rival)}
+                        className={`py-1 px-1 rounded-lg text-[10.5px] font-mono font-bold transition-all text-center ${
+                          isBattleActive
+                            ? "bg-amber-500/20 border border-amber-400 text-amber-200 shadow-[0_0_10px_rgba(245,158,11,0.35)] scale-[1.02]"
+                            : "bg-slate-800/50 hover:bg-slate-700/60 border border-slate-700/60 text-slate-400 hover:text-amber-300"
+                        }`}
+                        title={`Compare head-to-head with ${rival}`}
+                      >
+                        {rival}
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+
             {voiceMessage && (
               <div className="glass-card-sm animate-slide-in-right px-2.5 py-1.5 text-xs text-cyan-300 rounded-lg bg-cyan-950/40 border border-cyan-500/30 flex items-center gap-1.5">
                 <span>🤖</span>
@@ -222,71 +313,129 @@ export default function ARDashboard({
           {/* ═════════════════════════════════════════════════════════════════
               SCROLLABLE CONTENT BODY (Strict flex clipping, pr-1)
               ═════════════════════════════════════════════════════════════════ */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden p-3.5 space-y-3.5 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-3.5 pb-8 space-y-3.5 custom-scrollbar">
             {/* ── 1. TIMING & TECHNICALS TAB ── */}
             {activeTab === "Trader" && (
               <div className="flex flex-col gap-3">
-                {/* Technical Indicator & 3D Overlay Controls FIRST */}
-                <div className="flex flex-wrap items-center justify-between gap-1.5">
-                  <div className="flex items-center gap-1">
-                    {["sma", "bollinger", "macd"].map((ind) => (
-                      <button
-                        key={ind}
-                        onClick={() => onToggleIndicator?.(ind)}
-                        className={`text-[10px] font-bold px-2 py-1 rounded-md border transition-colors ${
-                          activeIndicators?.[ind]
-                            ? "bg-blue-500/25 text-blue-300 border-blue-500/60"
-                            : "bg-slate-800/60 text-slate-400 border-slate-700/60 hover:bg-slate-800"
-                        }`}
-                      >
-                        {ind.toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    {/* VPVR Wall 3D Toggle */}
-                    <button
-                      onClick={() => onSelectMetric?.(activeMetric === "VPVR" ? "INTRADAY" : "VPVR")}
-                      className={`text-[10px] font-bold px-2 py-1 rounded-md border transition-colors ${
-                        activeMetric === "VPVR"
-                          ? "bg-cyan-500/25 text-cyan-300 border-cyan-500/60 shadow-[0_0_10px_rgba(6,182,212,0.25)]"
-                          : "bg-slate-800/60 text-slate-400 border-slate-700/60 hover:bg-slate-800"
-                      }`}
-                    >
-                      3D VPVR Shelves
-                    </button>
-
-                    {/* LSTM Cone Overlay Toggle (Prominently Highlighted) */}
-                    {onToggleLSTMCone && (
-                      <button
-                        onClick={onToggleLSTMCone}
-                        className={`text-[10px] font-bold px-2 py-1 rounded-md border transition-colors ${
-                          showLSTMConeInTrader
-                            ? "bg-purple-500/25 text-purple-300 border-purple-500/60 shadow-[0_0_10px_rgba(168,85,247,0.25)]"
-                            : "bg-slate-800/60 text-slate-400 border-slate-700/60 hover:bg-slate-800"
-                        }`}
-                      >
-                        ✨ AI LSTM 5D Cone
-                      </button>
-                    )}
-                  </div>
+                {/* 3D Spatial Model Switcher */}
+                <div className="flex bg-[#0b1329] p-1 rounded-xl border border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.15)]">
+                  <button
+                    onClick={() => onSelectMetric?.("INTRADAY")}
+                    className={`flex-1 text-[11px] font-bold py-1.5 rounded-lg transition-all duration-300 flex items-center justify-center gap-1.5 ${
+                      activeMetric !== "IV_SURFACE"
+                        ? "bg-gradient-to-r from-blue-600/40 to-cyan-600/40 text-cyan-200 border border-cyan-400/50 shadow-[0_0_12px_rgba(6,182,212,0.3)]"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 border border-transparent"
+                    }`}
+                  >
+                    <span>📈</span>
+                    <span>3D Price, VPVR & LSTM</span>
+                  </button>
+                  <button
+                    onClick={() => onSelectMetric?.("IV_SURFACE")}
+                    className={`flex-1 text-[11px] font-bold py-1.5 rounded-lg transition-all duration-300 flex items-center justify-center gap-1.5 ${
+                      activeMetric === "IV_SURFACE"
+                        ? "bg-gradient-to-r from-purple-600/40 to-pink-600/40 text-pink-200 border border-pink-400/50 shadow-[0_0_12px_rgba(236,72,153,0.3)]"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 border border-transparent"
+                    }`}
+                  >
+                    <span>🌊</span>
+                    <span>3D Options IV Surface</span>
+                  </button>
                 </div>
 
-                {/* 2D Interactive Timing Chart */}
-                <div className="glass-card-sm p-2 border border-slate-700/60 rounded-xl bg-slate-900/60 shadow-inner min-h-[250px] relative overflow-hidden">
-                  {stockData.candlesticks && stockData.candlesticks.length > 0 ? (
-                    <TraderChart
-                      candlesticks={stockData.candlesticks}
-                      technicals={stockData.technicals}
-                      volumeProfile={stockData.volume_profile}
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-48 text-slate-500 text-xs">
-                      Candlestick data unavailable.
+                {activeMetric === "IV_SURFACE" ? (
+                  <div className="glass-card-sm p-3 border border-purple-500/30 rounded-xl bg-slate-900/80 shadow-inner space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-purple-300 flex items-center gap-1">
+                        <span>🌊</span> 3D VOLATILITY & GAMMA DYNAMICS
+                      </span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                        7D – 90D EXPIRIES
+                      </span>
                     </div>
-                  )}
-                </div>
+                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                      <div className="p-2 rounded-lg bg-slate-800/60 border border-slate-700/60">
+                        <div className="text-[9px] uppercase tracking-wider text-slate-400">ATM Implied Vol</div>
+                        <div className="font-mono font-bold text-cyan-300 mt-0.5">38.4%</div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-slate-800/60 border border-slate-700/60">
+                        <div className="text-[9px] uppercase tracking-wider text-slate-400">Put/Call Skew</div>
+                        <div className="font-mono font-bold text-amber-300 mt-0.5">+4.2%</div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-slate-800/60 border border-slate-700/60">
+                        <div className="text-[9px] uppercase tracking-wider text-slate-400">Max Gamma Wall</div>
+                        <div className="font-mono font-bold text-rose-300 mt-0.5">${(stockData.price * 1.05).toFixed(0)}</div>
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-slate-400 leading-relaxed bg-purple-950/20 p-2 rounded-lg border border-purple-500/20">
+                      💡 <span className="text-slate-300 font-semibold">Hover or click individual strike/DTE nodes</span> on the 3D surface to inspect delta risk. Toggle Catalysts below to stress-test volatility spikes.
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Technical Indicator & 3D Overlay Controls FIRST */}
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1">
+                        {["sma", "bollinger", "macd"].map((ind) => (
+                          <button
+                            key={ind}
+                            onClick={() => onToggleIndicator?.(ind)}
+                            className={`text-[10px] font-bold px-2 py-1 rounded-md border transition-colors ${
+                              activeIndicators?.[ind]
+                                ? "bg-blue-500/25 text-blue-300 border-blue-500/60"
+                                : "bg-slate-800/60 text-slate-400 border-slate-700/60 hover:bg-slate-800"
+                            }`}
+                          >
+                            {ind.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {/* VPVR Wall 3D Toggle */}
+                        <button
+                          onClick={() => onSelectMetric?.(activeMetric === "VPVR" ? "INTRADAY" : "VPVR")}
+                          className={`text-[10px] font-bold px-2 py-1 rounded-md border transition-colors ${
+                            activeMetric === "VPVR"
+                              ? "bg-cyan-500/25 text-cyan-300 border-cyan-500/60 shadow-[0_0_10px_rgba(6,182,212,0.25)]"
+                              : "bg-slate-800/60 text-slate-400 border-slate-700/60 hover:bg-slate-800"
+                          }`}
+                        >
+                          3D VPVR Shelves
+                        </button>
+
+                        {/* LSTM Cone Overlay Toggle (Prominently Highlighted) */}
+                        {onToggleLSTMCone && (
+                          <button
+                            onClick={onToggleLSTMCone}
+                            className={`text-[10px] font-bold px-2 py-1 rounded-md border transition-colors ${
+                              showLSTMConeInTrader
+                                ? "bg-purple-500/25 text-purple-300 border-purple-500/60 shadow-[0_0_10px_rgba(168,85,247,0.25)]"
+                                : "bg-slate-800/60 text-slate-400 border-slate-700/60 hover:bg-slate-800"
+                            }`}
+                          >
+                            ✨ AI LSTM 5D Cone
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 2D Interactive Timing Chart */}
+                    <div className="glass-card-sm p-2 border border-slate-700/60 rounded-xl bg-slate-900/60 shadow-inner min-h-[250px] relative overflow-hidden">
+                      {stockData.candlesticks && stockData.candlesticks.length > 0 ? (
+                        <TraderChart
+                          candlesticks={stockData.candlesticks}
+                          technicals={stockData.technicals}
+                          volumeProfile={stockData.volume_profile}
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center h-48 text-slate-500 text-xs">
+                          Candlestick data unavailable.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
 
                 {/* Catalyst & Momentum Shock Engine (Tailored for Trader Mode) */}
                 <CatalystScenarioEngine
@@ -344,6 +493,28 @@ export default function ARDashboard({
                         </div>
                       </button>
                     ))}
+                    {/* 5th Button: 🌐 Supply-Chain & Ecosystem Contagion */}
+                    <button
+                      onClick={() => onSelectMetric?.("CONTAGION_GRAPH")}
+                      className={`col-span-2 p-2.5 rounded-xl border text-left transition-all ${
+                        activeMetric === "CONTAGION_GRAPH"
+                          ? "bg-gradient-to-r from-cyan-950/80 via-slate-900/80 to-purple-950/80 border-cyan-400 text-cyan-200 shadow-[0_0_18px_rgba(6,182,212,0.35)]"
+                          : "bg-gradient-to-r from-slate-900/60 to-purple-950/30 border-slate-700/60 text-slate-300 hover:border-cyan-500/70 hover:bg-slate-800/80"
+                      }`}
+                    >
+                      <div className="text-sm font-bold flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-base">🌐</span>
+                          <span>Supply-Chain & Ecosystem Contagion</span>
+                        </div>
+                        <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                          Interactive
+                        </span>
+                      </div>
+                      <div className="text-[9.5px] text-slate-400 mt-0.5">
+                        2nd-Order Supplier, TAC & Regulatory Shock Network
+                      </div>
+                    </button>
                   </div>
                 </div>
 

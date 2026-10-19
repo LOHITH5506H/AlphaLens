@@ -73,9 +73,9 @@ export default function FinancialsChart({ financials, currency = "USD" }: Financ
             />
             <Legend wrapperStyle={{ fontSize: "10px" }} />
             
-            <Bar yAxisId="left" dataKey="Revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} />
+            <Bar yAxisId="left" dataKey="Revenue" fill="#38bdf8" radius={[4, 4, 0, 0]} barSize={20} />
             <Bar yAxisId="left" dataKey="GrossProfit" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
-            <Bar yAxisId="left" dataKey="OperatingIncome" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={20} />
+            <Bar yAxisId="left" dataKey="OperatingIncome" fill="#a855f7" radius={[4, 4, 0, 0]} barSize={20} />
             
             <Line 
               yAxisId="right" 

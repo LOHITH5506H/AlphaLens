@@ -16,6 +16,8 @@ class AIAnalysis(BaseSchema):
     summary: Optional[str] = None
     sentiment: Optional[str] = None
     score: Optional[float] = None
+    sentiment_score: Optional[float] = None
+    explanation: Optional[str] = None
     recommendation: Optional[str] = None
     key_points: Optional[List[str]] = None
     positive: Optional[float] = None
@@ -95,6 +97,14 @@ class StockData(BaseSchema):
     analysis: Optional[AIAnalysis] = None
     catalysts: Optional[List[NewsCatalyst]] = None
     thesis_summary: Optional[ThesisConvictionSummary] = None
+    # Compatibility aliases
+    ticker: Optional[str] = None
+    current_price: Optional[float] = None
+    eps: Optional[float] = None
+    fifty_two_week_high: Optional[float] = None
+    fifty_two_week_low: Optional[float] = None
+    sector: Optional[str] = None
+    price_history: Optional[List[Any]] = None
 
 class StockInsightsResponse(BaseSchema):
     """Response schema for the /api/stock-insights endpoint.
@@ -133,3 +143,22 @@ class VisualizationPayload(BaseSchema):
     axes: Dict[str, str]
     dimensions: Dict[str, Any]
     error: Optional[str] = None
+
+
+class SearchSuggestionItem(BaseSchema):
+    symbol: str
+    name: str
+    exchange: Optional[str] = "NASDAQ"
+    sector: Optional[str] = None
+    score: float = 1.0
+    match_reason: Optional[str] = None
+    is_correction: bool = False
+
+
+class SearchResponse(BaseSchema):
+    ticker: str
+    name: Optional[str] = None
+    query: str
+    is_correction: bool = False
+    match_reason: Optional[str] = None
+    suggestions: List[SearchSuggestionItem] = []

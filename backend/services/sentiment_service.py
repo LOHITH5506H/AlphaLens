@@ -8,6 +8,7 @@ All inference is forced to CPU per the hardware constraint.
 """
 
 import logging
+import typing
 from pathlib import Path
 
 import torch
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 class FinancialSentimentModel:
     tokenizer: BertTokenizer
-    model: BertForSequenceClassification
+    model: typing.Any
     labels = {0: "positive", 1: "negative", 2: "neutral"}
 
     def __init__(self, model_path: str = MODEL_PATH):
@@ -37,13 +38,13 @@ class FinancialSentimentModel:
         logger.info("Loading local FinBERT model onto %s...", self.device)
 
         tokenizer = BertTokenizer.from_pretrained(model_path, local_files_only=True)
-        model = BertForSequenceClassification.from_pretrained(model_path, local_files_only=True)
+        raw_model: typing.Any = BertForSequenceClassification.from_pretrained(model_path, local_files_only=True)
 
         assert tokenizer is not None, "Failed to load tokenizer"
-        assert model is not None, "Failed to load model"
+        assert raw_model is not None, "Failed to load model"
 
         self.tokenizer = tokenizer
-        self.model = model.to(self.device)
+        self.model = raw_model.to(self.device)
         self.model.eval()
 
     def predict(self, text: str) -> dict:
@@ -126,62 +127,46 @@ def _build_scenario_delta(sentiment_label: str, impact_cat: str, confidence: flo
 
     if sentiment_label == "Bullish":
         if "Margin" in impact_cat:
-            return {
-                "wacc_delta": round(-0.004 * intensity, 4),
-                "tgr_delta": round(0.003 * intensity, 4),
-                "margin_delta": round(0.025 * intensity, 4),
-                "lstm_drift": round(0.025 * intensity, 4),
-            }
+            wacc_d = -0.004 * intensity
+            tgr_d = 0.003 * intensity
+            margin_d = 0.025 * intensity
+            lstm_d = 0.025 * intensity
         elif "Rate" in impact_cat or "Valuation" in impact_cat:
-            return {
-                "wacc_delta": round(-0.010 * intensity, 4),
-                "tgr_delta": round(0.004 * intensity, 4),
-                "margin_delta": round(0.005 * intensity, 4),
-                "lstm_drift": round(0.018 * intensity, 4),
-            }
+            wacc_d = -0.010 * intensity
+            tgr_d = 0.004 * intensity
+            margin_d = 0.005 * intensity
+            lstm_d = 0.018 * intensity
         elif "Technical" in impact_cat:
-            return {
-                "wacc_delta": round(-0.002 * intensity, 4),
-                "tgr_delta": round(0.005 * intensity, 4),
-                "margin_delta": round(0.010 * intensity, 4),
-                "lstm_drift": round(0.035 * intensity, 4),
-            }
+            wacc_d = -0.002 * intensity
+            tgr_d = 0.005 * intensity
+            margin_d = 0.010 * intensity
+            lstm_d = 0.035 * intensity
         else: # Growth
-            return {
-                "wacc_delta": round(-0.006 * intensity, 4),
-                "tgr_delta": round(0.008 * intensity, 4),
-                "margin_delta": round(0.015 * intensity, 4),
-                "lstm_drift": round(0.030 * intensity, 4),
-            }
+            wacc_d = -0.006 * intensity
+            tgr_d = 0.008 * intensity
+            margin_d = 0.015 * intensity
+            lstm_d = 0.030 * intensity
     elif sentiment_label == "Bearish":
         if "Margin" in impact_cat:
-            return {
-                "wacc_delta": round(0.006 * intensity, 4),
-                "tgr_delta": round(-0.004 * intensity, 4),
-                "margin_delta": round(-0.030 * intensity, 4),
-                "lstm_drift": round(-0.035 * intensity, 4),
-            }
+            wacc_d = 0.006 * intensity
+            tgr_d = -0.004 * intensity
+            margin_d = -0.030 * intensity
+            lstm_d = -0.035 * intensity
         elif "Rate" in impact_cat or "Valuation" in impact_cat:
-            return {
-                "wacc_delta": round(0.012 * intensity, 4),
-                "tgr_delta": round(-0.006 * intensity, 4),
-                "margin_delta": round(-0.005 * intensity, 4),
-                "lstm_drift": round(-0.025 * intensity, 4),
-            }
+            wacc_d = 0.012 * intensity
+            tgr_d = -0.006 * intensity
+            margin_d = -0.005 * intensity
+            lstm_d = -0.025 * intensity
         elif "Technical" in impact_cat:
-            return {
-                "wacc_delta": round(0.004 * intensity, 4),
-                "tgr_delta": round(-0.005 * intensity, 4),
-                "margin_delta": round(-0.010 * intensity, 4),
-                "lstm_drift": round(-0.040 * intensity, 4),
-            }
+            wacc_d = 0.004 * intensity
+            tgr_d = -0.005 * intensity
+            margin_d = -0.010 * intensity
+            lstm_d = -0.040 * intensity
         else:
-            return {
-                "wacc_delta": round(0.008 * intensity, 4),
-                "tgr_delta": round(-0.008 * intensity, 4),
-                "margin_delta": round(-0.020 * intensity, 4),
-                "lstm_drift": round(-0.035 * intensity, 4),
-            }
+            wacc_d = 0.008 * intensity
+            tgr_d = -0.008 * intensity
+            margin_d = -0.020 * intensity
+            lstm_d = -0.035 * intensity
     else:
         return {
             "wacc_delta": 0.0,
@@ -189,6 +174,13 @@ def _build_scenario_delta(sentiment_label: str, impact_cat: str, confidence: flo
             "margin_delta": 0.0,
             "lstm_drift": 0.0,
         }
+
+    return {
+        "wacc_delta": round(wacc_d, 4),
+        "tgr_delta": round(tgr_d, 4),
+        "margin_delta": round(margin_d, 4),
+        "lstm_drift": round(max(-0.045, min(0.045, lstm_d)), 4),
+    }
 
 
 # High-conviction fallback catalysts for robust live demos when yfinance news is rate-limited
@@ -459,10 +451,13 @@ def analyze_ticker_catalysts(ticker: str) -> dict:
             ]
 
         for item in fallback_list:
-            delta = _build_scenario_delta(item["sentiment_label"], item["impact_category"], item["confidence_pct"])
+            s_label = str(item["sentiment_label"])
+            i_cat = str(item["impact_category"])
+            c_pct = float(item["confidence_pct"])
+            delta = _build_scenario_delta(s_label, i_cat, c_pct)
             full_item = {**item, "scenario_delta": delta}
             catalysts.append(full_item)
-            contrib = 0.8 if item["sentiment_label"] == "Bullish" else (-0.7 if item["sentiment_label"] == "Bearish" else 0.0)
+            contrib = 0.8 if s_label == "Bullish" else (-0.7 if s_label == "Bearish" else 0.0)
             scores.append(contrib)
 
     # Compute aggregate

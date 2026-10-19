@@ -40,17 +40,76 @@ export async function fetchStockInsights(ticker: string): Promise<StockInsights>
   }
 }
 
+import { SearchResult, SearchSuggestion } from "@/types";
+import { resolveCompanyQuery, getFuzzySuggestions } from "./searchUtils";
+
 /**
  * Search for a company name and get its ticker symbol.
+ * Gracefully resolves typos (e.g. 'epp' -> 'AAPL').
  */
 export async function searchTicker(query: string): Promise<string> {
-  const res = await fetch(`${API_BASE_URL}/api/search/${encodeURIComponent(query)}`);
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail || `Failed to search company (${res.status})`);
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/search/${encodeURIComponent(query)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ticker) return data.ticker;
+    }
+  } catch (err) {
+    console.warn(`[AlphaLens] Backend search failed for "${query}", using fuzzy resolver:`, err);
   }
-  const data = await res.json();
-  return data.ticker;
+  // Client-side fuzzy fallback
+  const resolved = resolveCompanyQuery(query);
+  return resolved.ticker;
+}
+
+/**
+ * Rich search with auto-correction metadata and suggestions.
+ */
+export async function searchTickerWithDetails(query: string): Promise<SearchResult> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/search/${encodeURIComponent(query)}`);
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        ticker: data.ticker,
+        name: data.name,
+        query: query,
+        isCorrection: data.is_correction,
+        matchReason: data.match_reason,
+        suggestions: data.suggestions || [],
+      };
+    }
+  } catch (err) {
+    console.warn(`[AlphaLens] Backend searchWithDetails failed for "${query}", using client fuzzy:`, err);
+  }
+  const resolved = resolveCompanyQuery(query);
+  const suggestions = getFuzzySuggestions(query, 5);
+  return {
+    ticker: resolved.ticker,
+    name: resolved.name,
+    query: query,
+    isCorrection: resolved.isCorrection,
+    matchReason: resolved.reason,
+    suggestions: suggestions,
+  };
+}
+
+/**
+ * Fetch live search suggestions for auto-complete dropdown.
+ */
+export async function fetchSearchSuggestions(query: string): Promise<SearchSuggestion[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/search-suggestions?q=${encodeURIComponent(query)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+        return data.suggestions;
+      }
+    }
+  } catch (err) {
+    // Network fallback
+  }
+  return getFuzzySuggestions(query, 5);
 }
 
 /**

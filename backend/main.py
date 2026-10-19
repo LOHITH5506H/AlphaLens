@@ -142,12 +142,21 @@ async def fetch_stock_insights(ticker: str):
 @app.get("/api/search/{query}")
 async def search_company(query: str):
     """
-    Search for a company by name and return its ticker symbol.
+    Search for a company by name or typo and return its ticker symbol along with suggestions.
     """
-    from services.stock_service import search_company_ticker
+    from services.stock_service import search_company_ticker, get_search_suggestions
     try:
         ticker = search_company_ticker(query)
-        return {"ticker": ticker}
+        suggestions = get_search_suggestions(query, limit=5)
+        top = suggestions[0] if suggestions else None
+        return {
+            "ticker": ticker,
+            "query": query,
+            "name": top["name"] if top else ticker,
+            "is_correction": top["is_correction"] if top else False,
+            "match_reason": top["match_reason"] if top else None,
+            "suggestions": suggestions,
+        }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -156,6 +165,16 @@ async def search_company(query: str):
             status_code=500,
             detail="Error searching for company.",
         )
+
+
+@app.get("/api/search-suggestions")
+async def get_search_suggestions_endpoint(q: str = ""):
+    """
+    Get ranked, typo-tolerant search suggestions for a query string.
+    """
+    from services.stock_service import get_search_suggestions
+    suggestions = get_search_suggestions(q, limit=6)
+    return {"query": q, "suggestions": suggestions}
 
 
 @app.post("/api/analyze-sentiment", response_model=AIAnalysis)

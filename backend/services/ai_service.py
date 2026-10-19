@@ -123,12 +123,12 @@ Parse the user's intent and respond with a JSON object containing:
 - "intent": one of [
     "show_pe", "show_eps", "show_market_cap", "show_price", "show_chart", "show_news", "ai_analysis", "show_volume", "show_sector", "show_all",
     "stress_test_bear", "stress_test_bull", "stress_test_base",
-    "show_dcf", "show_peers", "show_dupont", "show_vpvr",
-    "switch_trader", "switch_investor", "pitch_mode",
+    "show_dcf", "show_peers", "show_dupont", "show_vpvr", "show_contagion_graph",
+    "switch_trader", "switch_investor", "pitch_mode", "compare_ticker",
     "unknown"
   ]
 - "message": a brief, friendly response to the user (1-2 sentences)
-- "data": null (or relevant extra data if needed)
+- "data": null (or relevant extra data if needed, e.g. {"action": "compare_ticker", "target": "AAPL"})
 
 Examples of mappings:
 - "stress test bear case", "bear case", "test downside" -> "stress_test_bear"
@@ -138,9 +138,12 @@ Examples of mappings:
 - "show peer scatter", "compare peers", "show peers", "peer analysis" -> "show_peers"
 - "show dupont tree", "dupont decomposition", "dupont" -> "show_dupont"
 - "show volume profile", "show vpvr", "volume shelves", "poc" -> "show_vpvr"
+- "show contagion graph", "supply chain", "ecosystem network", "tsmc suppliers" -> "show_contagion_graph"
 - "switch to trader", "trader mode", "timing mode", "show candlesticks" -> "switch_trader"
 - "switch to investor", "investor mode", "valuation mode", "thesis lab" -> "switch_investor"
 - "pitch mode", "broadcast mode", "presentation mode", "studio mode" -> "pitch_mode"
+- "compare with apple", "battle mode against tesla", "vs msft" -> "compare_ticker" with data: {"action": "compare_ticker", "target": "AAPL"}
+- "exit battle mode", "stop battle", "compare off" -> "compare_ticker" with data: {"action": "compare_ticker", "target": "OFF"}
 
 If the intent is unclear, use "unknown" and ask for clarification in the message.
 """
@@ -161,29 +164,42 @@ async def analyze_stock(stock_data: StockData) -> AIAnalysis:
 
     # Format the stock data as a readable prompt
     price_trend = "N/A"
-    if len(stock_data.price_history) >= 2:
-        first_price = stock_data.price_history[0].close
-        last_price = stock_data.price_history[-1].close
-        change_pct = ((last_price - first_price) / first_price) * 100
-        price_trend = f"{change_pct:+.2f}% over 1 month (${first_price:.2f} → ${last_price:.2f})"
+    hist_list = stock_data.candlesticks or stock_data.history or stock_data.price_history or []
+    if len(hist_list) >= 2:
+        first = hist_list[0]
+        last = hist_list[-1]
+        first_price = getattr(first, 'close', None) or (first.get('close') if isinstance(first, dict) else None) or 0
+        last_price = getattr(last, 'close', None) or (last.get('close') if isinstance(last, dict) else None) or 0
+        if first_price:
+            change_pct = ((last_price - first_price) / first_price) * 100
+            price_trend = f"{change_pct:+.2f}% over 1 month (${first_price:.2f} → ${last_price:.2f})"
+
+    sym = stock_data.symbol or stock_data.ticker or "N/A"
+    curr_px = stock_data.price if stock_data.price is not None else (stock_data.current_price or 0.0)
+    eps_val = getattr(stock_data, "eps", None) or "N/A"
+    hi_val = stock_data.high if stock_data.high is not None else (getattr(stock_data, "fifty_two_week_high", None) or "N/A")
+    lo_val = stock_data.low if stock_data.low is not None else (getattr(stock_data, "fifty_two_week_low", None) or "N/A")
+    vol_val = f"{stock_data.volume:,}" if stock_data.volume else "N/A"
+    mcap_val = f"${stock_data.market_cap:,}" if stock_data.market_cap else "N/A"
+    sec_val = getattr(stock_data, "sector", None) or "N/A"
 
     user_prompt = f"""Analyze the following stock data:
 
-Ticker: {stock_data.ticker}
+Ticker: {sym}
 Company: {stock_data.name}
-Current Price: ${stock_data.current_price}
-Market Cap: ${stock_data.market_cap:,} if stock_data.market_cap else "N/A"
+Current Price: ${curr_px}
+Market Cap: {mcap_val}
 PE Ratio (Trailing): {stock_data.pe_ratio if stock_data.pe_ratio else "N/A"}
-EPS (Trailing): ${stock_data.eps if stock_data.eps else "N/A"}
-52-Week High: ${stock_data.fifty_two_week_high}
-52-Week Low: ${stock_data.fifty_two_week_low}
-Volume: {stock_data.volume:,} if stock_data.volume else "N/A"
-Sector: {stock_data.sector or "N/A"}
+EPS (Trailing): ${eps_val}
+52-Week High: ${hi_val}
+52-Week Low: ${lo_val}
+Volume: {vol_val}
+Sector: {sec_val}
 1-Month Price Trend: {price_trend}
 
 Provide your investment analysis."""
 
-    logger.info("Sending analysis request to Gemini for %s", stock_data.ticker)
+    logger.info("Sending analysis request to Gemini for %s", sym)
 
     try:
         response = await generate_with_fallback(
@@ -202,21 +218,25 @@ Provide your investment analysis."""
 
         # The response is guaranteed to be valid JSON matching AIAnalysis
         result = AIAnalysis.model_validate_json(text)
+        score_val = result.sentiment_score if result.sentiment_score is not None else (result.score or 50.0)
         logger.info(
-            "Gemini analysis for %s: %s (score: %d)",
-            stock_data.ticker,
+            "Gemini analysis for %s: %s (score: %s)",
+            sym,
             result.recommendation,
-            result.sentiment_score,
+            score_val,
         )
         return result
 
     except Exception as e:
-        logger.error("Gemini API error for %s after all fallbacks: %s", stock_data.ticker, e)
+        logger.error("Gemini API error for %s after all fallbacks: %s", sym, e)
         # Return a safe fallback rather than crashing the endpoint
         return AIAnalysis(
             sentiment_score=50,
+            score=50.0,
+            sentiment="Neutral",
             recommendation="Hold",
-            explanation="AI analysis temporarily unavailable due to server demand. Displaying raw financial data."
+            explanation="AI analysis temporarily unavailable due to server demand. Displaying raw financial data.",
+            summary="AI analysis temporarily unavailable due to server demand. Displaying raw financial data."
         )
 
 
@@ -233,6 +253,14 @@ async def process_voice_command(transcript: str, ticker: str) -> dict:
     """
     # Fast-path deterministic parsing for high-value analyst workflows
     t_lower = transcript.lower().strip()
+    if any(k in t_lower for k in ["contagion", "supply chain", "ecosystem", "tsmc", "suppliers"]):
+        return {
+            "intent": "show_contagion_graph",
+            "action": "show_contagion_graph",
+            "target": "contagion_graph",
+            "message": f"Opening 3D Supply-Chain & Ecosystem Contagion Graph for {ticker}",
+            "data": {"action": "show_contagion_graph", "target": "contagion_graph"},
+        }
     if any(k in t_lower for k in ["bear case", "stress test bear", "downside scenario"]):
         return {"intent": "stress_test_bear", "message": f"Stress-testing Bear Case for {ticker}: WACC +1.5%, Growth -1.0%, Margins -2.5%", "data": None}
     if any(k in t_lower for k in ["bull case", "stress test bull", "upside scenario"]):
@@ -253,6 +281,67 @@ async def process_voice_command(transcript: str, ticker: str) -> dict:
         return {"intent": "switch_investor", "message": "Switching to Valuation & Thesis Lab Mode", "data": None}
     if any(k in t_lower for k in ["pitch mode", "broadcast mode", "presentation mode", "studio mode"]):
         return {"intent": "pitch_mode", "message": "Toggling Presentation & Pitch Studio Mode", "data": None}
+    if any(k in t_lower for k in ["iv surface", "implied vol", "volatility surface", "options surface", "gamma surface"]):
+        return {"intent": "show_iv_surface", "message": f"Opening 3D Options Implied Volatility & Gamma Surface for {ticker}", "data": None}
+    if any(k in t_lower for k in ["auto tour", "start tour", "pitch tour", "presentation tour", "run tour"]):
+        return {"intent": "auto_pitch_tour", "message": "Launching autonomous 4-stage Pitch Studio tour", "data": None}
+    if any(k in t_lower for k in ["debate", "bull bear", "bull vs bear", "ic debate", "committee debate"]):
+        return {"intent": "bull_bear_debate", "message": "Convening Investment Committee Bull versus Bear Debate", "data": None}
+
+    # Dual-Ticker 3D Battle Mode Voice Commands
+    if any(k in t_lower for k in ["exit battle mode", "close battle mode", "exit battle", "stop compare", "compare off", "turn off battle"]):
+        return {
+            "intent": "compare_ticker",
+            "action": "compare_ticker",
+            "target": "OFF",
+            "message": "Exiting 3D Head-to-Head Battle Mode",
+            "data": {"action": "compare_ticker", "target": "OFF"}
+        }
+
+    peer_map = {
+        "AAPL": ["apple", "aapl"],
+        "NVDA": ["nvidia", "nvda"],
+        "TSLA": ["tesla", "tsla"],
+        "MSFT": ["microsoft", "msft"],
+        "GOOGL": ["google", "alphabet", "googl", "goog"]
+    }
+    for peer, names in peer_map.items():
+        if any(
+            f"compare with {n}" in t_lower or
+            f"compare to {n}" in t_lower or
+            f"battle mode against {n}" in t_lower or
+            f"battle against {n}" in t_lower or
+            f"battle mode {n}" in t_lower or
+            f"battle {n}" in t_lower or
+            f"vs {n}" in t_lower or
+            f"versus {n}" in t_lower or
+            f"compare {ticker.lower()} and {n}" in t_lower
+            for n in names
+        ):
+            return {
+                "intent": "compare_ticker",
+                "action": "compare_ticker",
+                "target": peer,
+                "message": f"Entering 3D Head-to-Head Battle Mode: {ticker} vs {peer}",
+                "data": {"action": "compare_ticker", "target": peer}
+            }
+
+    # Search / Switch ticker voice commands with typo tolerance (e.g. "switch to epp" -> AAPL)
+    for prefix in ["switch to ", "show ", "open ", "search for ", "search ", "look up ", "load "]:
+        if t_lower.startswith(prefix):
+            target_query = t_lower[len(prefix):].strip()
+            # Ignore mode switches like "switch to trader" or "switch to investor"
+            if target_query not in ["trader", "investor", "pitch mode"]:
+                from services.stock_service import search_company_ticker
+                resolved = search_company_ticker(target_query)
+                if resolved:
+                    return {
+                        "intent": "switch_ticker",
+                        "action": "switch_ticker",
+                        "target": resolved,
+                        "message": f"Switching to {resolved}",
+                        "data": {"action": "switch_ticker", "target": resolved}
+                    }
 
     client = _get_client()
 

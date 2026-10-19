@@ -87,6 +87,7 @@ export const METRIC_TIMEFRAMES: Record<string, string[]> = {
   'WATERFALL':      [],
   'PEER_SCATTER':   [],
   'DCF_TERRAIN':    [],
+  'CONTAGION_GRAPH': [],
 
   // 4. TRADER / TECHNICAL METRICS (Continuous trading intervals)
   'INTRADAY':       ['1D', '1W', '1M', '3M', '6M', '1Y', '3Y', '5Y', 'Max'],

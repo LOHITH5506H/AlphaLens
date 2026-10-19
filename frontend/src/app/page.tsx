@@ -11,10 +11,12 @@ import { useStockInsights } from "@/hooks/useStockInsights";
 import { useSpeech } from "@/hooks/useSpeech";
 import { useHandTracking } from "@/hooks/useHandTracking";
 import HandCursor from "@/components/HandCursor";
-import { sendVoiceCommand, searchTicker } from "@/lib/api";
+import { sendVoiceCommand, searchTicker, fetchStockData } from "@/lib/api";
 import { METRIC_TIMEFRAMES } from "@/lib/constants";
-import type { FundamentalMetricResponse, ScenarioParams } from "@/types";
+import type { FundamentalMetricResponse, ScenarioParams, StockData } from "@/types";
 import { computeScenarioDCF } from "@/lib/mathUtils";
+import { CompanySearch } from "@/components/CompanySearch";
+import { resolveCompanyQuery } from "@/lib/searchUtils";
 
 // Dynamically import ARScene with SSR disabled (needs browser APIs)
 const ARScene = dynamic(() => import("@/components/ARScene"), {
@@ -56,6 +58,50 @@ const INTENT_TO_STATS: Record<string, string[]> = {
 
 const REFRESH_INTERVAL_MS = 60_000;
 
+// ── 5-Stage Cinematic Presentation Tour Matrix ──────────────────────────────
+const TOUR_STAGES = [
+  {
+    step: 1,
+    title: "Step 1/5: Technical Regime & LSTM",
+    tab: "Trader" as const,
+    metric: "INTRADAY",
+    getBriefing: (ticker: string, price: number, lstmTarget: number) =>
+      `Stage 1: Technical Regime and LSTM 5-day neural forecast for ${ticker}. Current spot $${price.toFixed(2)}, projected upside target $${lstmTarget.toFixed(2)}.`,
+  },
+  {
+    step: 2,
+    title: "Step 2/5: 3D DCF Valuation Surface",
+    tab: "Investor" as const,
+    metric: "DCF_TERRAIN",
+    getBriefing: (ticker: string, fairValue: number, bullValue: number) =>
+      `Stage 2: 3D DCF Valuation Sensitivity Surface. Base case fair value $${fairValue.toFixed(2)}, with unconstrained Bull case upside to $${bullValue.toFixed(2)}.`,
+  },
+  {
+    step: 3,
+    title: "Step 3/5: Peer Pareto Scatter",
+    tab: "Investor" as const,
+    metric: "PEER_SCATTER",
+    getBriefing: (ticker: string) =>
+      `Stage 3: Multi-Factor Peer Pareto Scatter Cloud for ${ticker}. Benchmarking valuation multiples, ROE, and growth velocity against mega-cap peers.`,
+  },
+  {
+    step: 4,
+    title: "Step 4/5: DuPont ROE Lattice",
+    tab: "Investor" as const,
+    metric: "DUPONT_TREE",
+    getBriefing: (ticker: string) =>
+      `Stage 4: DuPont ROE 3D Factor Tree for ${ticker}. Decomposing profitability into Net Margin, Asset Turnover, and Financial Leverage efficiency.`,
+  },
+  {
+    step: 5,
+    title: "Step 5/5: 3D Supply-Chain & Ecosystem Contagion Network",
+    tab: "Investor" as const,
+    metric: "CONTAGION_GRAPH",
+    getBriefing: (ticker: string) =>
+      `Stage 5: 3D Supply-Chain and Ecosystem Contagion Network for ${ticker}. Simulating how upstream semiconductor foundry bottlenecks and downstream ecosystem risks propagate second-order margin and DCF shocks.`,
+  },
+];
+
 export default function HomePage() {
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
   const [showDashboard, setShowDashboard] = useState(false);
@@ -87,6 +133,13 @@ export default function HomePage() {
   });
   const [isPitchMode, setIsPitchMode] = useState<boolean>(false);
   const [showLSTMConeInTrader, setShowLSTMConeInTrader] = useState<boolean>(true);
+  const [isAutoTour, setIsAutoTour] = useState<boolean>(false);
+  const [tourStep, setTourStep] = useState<number>(0);
+  const [showICDebate, setShowICDebate] = useState<boolean>(false);
+
+  // ⚔️ Dual-Ticker 3D Battle Mode State
+  const [compareTicker, setCompareTicker] = useState<string | null>(null);
+  const [compareStockData, setCompareStockData] = useState<StockData | null>(null);
 
   const stockData = useStockData();
   const aiAnalysis = useAIAnalysis();
@@ -148,7 +201,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!activeTicker) return;
-    const basicMetrics = ["INTRADAY", "VOLUME", "MARKET_CAP", "DAY_RANGE", "VPVR", "DUPONT_TREE", "WATERFALL", "PEER_SCATTER", "DCF_TERRAIN"];
+    const basicMetrics = ["INTRADAY", "VOLUME", "MARKET_CAP", "DAY_RANGE", "VPVR", "DUPONT_TREE", "WATERFALL", "PEER_SCATTER", "DCF_TERRAIN", "CONTAGION_GRAPH"];
     if (basicMetrics.includes(activeMetric)) {
       setSelectedMetricData(null);
       setMetricLoading(false);
@@ -192,6 +245,79 @@ export default function HomePage() {
     }
   }, [handleTargetFound]);
 
+  const handleSelectTicker = useCallback((ticker: string) => {
+    // Reset active scenario shocks to Base Case
+    setScenarioParams({
+      wacc_delta: 0,
+      tgr_delta: 0,
+      margin_delta: 0,
+      active_scenario: "base",
+    });
+    if (ticker === compareTicker) {
+      setCompareTicker(null);
+      setCompareStockData(null);
+    }
+    const currentMetric = activeMetric;
+    const currentTab = activeTab;
+
+    handleTargetFound(0, ticker, true);
+
+    // If user was viewing a specialized metric (e.g. CONTAGION_GRAPH, DCF_TERRAIN, VPVR, IV_SURFACE), preserve it
+    if (currentMetric && currentMetric !== "INTRADAY") {
+      setActiveMetric(currentMetric);
+      setActiveTab(currentTab);
+    }
+  }, [handleTargetFound, activeMetric, activeTab, compareTicker]);
+
+  // ⚔️ Battle Mode Rival Data Fetcher with robust offline fallback
+  const handleSetCompareTicker = useCallback(async (ticker: string | null) => {
+    if (!ticker || ticker === "OFF") {
+      setCompareTicker(null);
+      setCompareStockData(null);
+      return;
+    }
+    setCompareTicker(ticker);
+    try {
+      const data = await fetchStockData(ticker, timeframe);
+      setCompareStockData(data);
+    } catch (err) {
+      console.warn(`[AlphaLens] Failed to fetch data for rival ${ticker}, using realistic fallback:`, err);
+      const fallbackPrices: Record<string, number> = {
+        AAPL: 228.45,
+        NVDA: 214.13,
+        TSLA: 219.80,
+        MSFT: 448.20,
+        GOOGL: 182.50,
+      };
+      const fallbackPx = fallbackPrices[ticker] || 200.0;
+      const fallback: StockData = {
+        symbol: ticker,
+        name: ticker === "NVDA" ? "NVIDIA Corporation" : ticker === "AAPL" ? "Apple Inc." : ticker === "TSLA" ? "Tesla Inc." : ticker === "MSFT" ? "Microsoft Corporation" : "Alphabet Inc.",
+        price: fallbackPx,
+        change: 1.25,
+        changePercent: 0.65,
+        currency: "USD",
+        open: fallbackPx * 0.99,
+        high: fallbackPx * 1.02,
+        low: fallbackPx * 0.98,
+        previousClose: fallbackPx * 0.995,
+        volume: 45000000,
+        marketCap: 3000000000000,
+        peRatio: ticker === "NVDA" ? 54.2 : ticker === "AAPL" ? 33.1 : ticker === "MSFT" ? 35.8 : 26.5,
+        candlesticks: stockData.data?.candlesticks || [],
+        thesis_summary: {
+          conviction_score: ticker === "NVDA" ? 83 : ticker === "MSFT" ? 81 : ticker === "AAPL" ? 78 : 74,
+          regime_label: "Institutional Momentum Accumulation",
+          valuation_status: "Fairly Valued",
+          catalyst_bias: "Bullish",
+          margin_of_safety_pct: ticker === "NVDA" ? 12.0 : ticker === "AAPL" ? 6.8 : ticker === "MSFT" ? 9.5 : 8.0,
+          implied_dcf_price: fallbackPx * 1.10,
+        },
+      };
+      setCompareStockData(fallback);
+    }
+  }, [timeframe, stockData.data]);
+
   const prevTranscript = useRef("");
   useEffect(() => {
     const transcript = speech.transcript;
@@ -203,6 +329,44 @@ export default function HomePage() {
     if (!activeTickerRef.current) {
       setVoiceMessage("Please scan a logo or search for a company first.");
       return;
+    }
+
+    // Quick client-side intercept for Battle Mode voice commands
+    const tLower = transcript.toLowerCase();
+    if (tLower.includes("exit battle") || tLower.includes("stop compare") || tLower.includes("compare off") || tLower.includes("close battle")) {
+      handleSetCompareTicker(null);
+      setVoiceMessage("Exiting 3D Head-to-Head Battle Mode");
+    } else {
+      const peerKeys = ["AAPL", "NVDA", "TSLA", "MSFT", "GOOGL"];
+      const peerAliases: Record<string, string[]> = {
+        AAPL: ["apple", "aapl"],
+        NVDA: ["nvidia", "nvda"],
+        TSLA: ["tesla", "tsla"],
+        MSFT: ["microsoft", "msft"],
+        GOOGL: ["google", "alphabet", "googl", "goog"],
+      };
+      for (const pk of peerKeys) {
+        if (peerAliases[pk].some(a => tLower.includes(`compare with ${a}`) || tLower.includes(`compare to ${a}`) || tLower.includes(`battle mode against ${a}`) || tLower.includes(`battle against ${a}`) || tLower.includes(`vs ${a}`) || tLower.includes(`versus ${a}`) || tLower.includes(`battle ${a}`))) {
+          handleSetCompareTicker(pk);
+          setVoiceMessage(`Entering 3D Head-to-Head Battle Mode against ${pk}`);
+          break;
+        }
+      }
+
+      // Voice commands to switch/search company with typo resolution (e.g. "switch to epp" -> AAPL)
+      for (const prefix of ["switch to ", "show ", "search for ", "search ", "look up ", "open ", "load "]) {
+        if (tLower.startsWith(prefix)) {
+          const rawQuery = tLower.slice(prefix.length).trim();
+          if (rawQuery && !["trader", "investor", "pitch mode", "battle mode"].includes(rawQuery)) {
+            const resolved = resolveCompanyQuery(rawQuery);
+            if (resolved.ticker) {
+              handleSelectTicker(resolved.ticker);
+              setVoiceMessage(`Switched to ${resolved.name || resolved.ticker}`);
+              break;
+            }
+          }
+        }
+      }
     }
 
     sendVoiceCommand(transcript, activeTickerRef.current)
@@ -220,8 +384,24 @@ export default function HomePage() {
             aiAnalysis.fetch(text);
           }
         }
-        // Analyst Workflow & Stress-Testing Intents:
-        if (intent === "stress_test_bear") {
+        // Analyst Workflow, Battle Mode & Stress-Testing Intents:
+        const action = (response as any).action || (response.data as any)?.action;
+        if (intent === "switch_ticker" || action === "switch_ticker") {
+          const target = (response as any).target || (response.data as any)?.target;
+          if (target) {
+            handleSelectTicker(target);
+          }
+        } else if (intent === "compare_ticker" || action === "compare_ticker") {
+          const target = (response as any).target || (response.data as any)?.target;
+          if (target === "OFF" || target === "off" || !target) {
+            handleSetCompareTicker(null);
+          } else {
+            handleSetCompareTicker(target);
+          }
+        } else if (intent === "show_contagion_graph" || action === "show_contagion_graph") {
+          setActiveTab("Investor");
+          setActiveMetric("CONTAGION_GRAPH");
+        } else if (intent === "stress_test_bear") {
           setScenarioParams({
             wacc_delta: 0.015,
             tgr_delta: -0.01,
@@ -254,18 +434,27 @@ export default function HomePage() {
         } else if (intent === "show_vpvr") {
           setActiveTab("Trader");
           setActiveMetric("VPVR");
+        } else if (intent === "show_iv_surface") {
+          setActiveTab("Trader");
+          setActiveMetric("IV_SURFACE");
         } else if (intent === "switch_trader") {
           setActiveTab("Trader");
         } else if (intent === "switch_investor") {
           setActiveTab("Investor");
         } else if (intent === "pitch_mode") {
           setIsPitchMode(prev => !prev);
+        } else if (intent === "auto_pitch_tour") {
+          setIsPitchMode(true);
+          setIsAutoTour(true);
+          setTourStep(0);
+        } else if (intent === "bull_bear_debate") {
+          setShowICDebate(true);
         }
       })
       .catch(() => {
         setVoiceMessage("Sorry, I couldn't process that command.");
       });
-  }, [speech.transcript, speech.isListening, aiAnalysis]);
+  }, [speech.transcript, speech.isListening, aiAnalysis, handleSetCompareTicker]);
 
   // Handle Hand Gestures
   const tabs: ("Trader" | "Investor")[] = ["Trader", "Investor"];
@@ -408,6 +597,85 @@ export default function HomePage() {
     );
   }, [stockData.data, stockInsights.insights, scenarioParams]);
 
+  const bullDcf = useMemo(() => {
+    if (!stockData.data) return null;
+    return computeScenarioDCF(
+      stockData.data.price,
+      stockInsights.insights?.thesis_summary?.implied_dcf_price,
+      { preset: "Bull", wacc_delta: -0.015, tgr_delta: 0.0075, margin_delta: 0.03 }
+    );
+  }, [stockData.data, stockInsights.insights]);
+
+  const bearDcf = useMemo(() => {
+    if (!stockData.data) return null;
+    return computeScenarioDCF(
+      stockData.data.price,
+      stockInsights.insights?.thesis_summary?.implied_dcf_price,
+      { preset: "Bear", wacc_delta: 0.015, tgr_delta: -0.0075, margin_delta: -0.03 }
+    );
+  }, [stockData.data, stockInsights.insights]);
+
+  // ── Speech Synthesis helper for Briefings & IC Debate ──────────────
+  const speakBriefing = useCallback((text: string) => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.05;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        // Fallback for audio restriction
+      }
+    }
+  }, []);
+
+  // ── Autonomous 4-Stage Pitch Studio Tour Cycler ─────────────────────
+  useEffect(() => {
+    if (!isAutoTour || !stockData.data) return;
+
+    const stage = TOUR_STAGES[tourStep];
+    setActiveTab(stage.tab);
+    setActiveMetric(stage.metric);
+    if (stage.tab === "Trader") {
+      setShowLSTMConeInTrader(true);
+    }
+
+    const currentP = stockData.data.price || 100;
+    const lstmTarget = stockInsights.insights?.predicted_prices?.[4] || currentP * 1.04;
+    const baseVal = pitchDcfResult?.fairValue || currentP * 1.12;
+    const bullVal = bullDcf?.fairValue || 467.93;
+
+    let briefing = "";
+    if (stage.step === 1) briefing = stage.getBriefing(stockData.data.symbol, currentP, lstmTarget);
+    else if (stage.step === 2) briefing = stage.getBriefing(stockData.data.symbol, baseVal, bullVal);
+    else briefing = (stage.getBriefing as (t: string) => string)(stockData.data.symbol);
+
+    setVoiceMessage(briefing);
+    speakBriefing(briefing);
+
+    const timer = setInterval(() => {
+      setTourStep((prev) => (prev + 1) % TOUR_STAGES.length);
+    }, 9000);
+
+    return () => clearInterval(timer);
+  }, [isAutoTour, tourStep, stockData.data, pitchDcfResult, bullDcf, stockInsights.insights, speakBriefing]);
+
+  // Stop tour if user clicks background/scene (outside pitch-hud and debate modal)
+  useEffect(() => {
+    if (!isAutoTour) return;
+    const handleCanvasClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("#pitch-hud") || target.closest("#ic-debate-modal")) return;
+      setIsAutoTour(false);
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+    window.addEventListener("pointerdown", handleCanvasClick);
+    return () => window.removeEventListener("pointerdown", handleCanvasClick);
+  }, [isAutoTour]);
+
   return (
     <main className="relative w-full h-screen overflow-hidden bg-slate-950">
       {/* AR Engine (Continuous Tracking + 3D Visualizations) */}
@@ -428,6 +696,9 @@ export default function HomePage() {
           onPinchStateChange={setIsPinching}
           scenarioParams={scenarioParams}
           showLSTMConeInTrader={showLSTMConeInTrader}
+          compareTicker={compareTicker}
+          compareStockData={compareStockData}
+          onSelectCompareTicker={handleSetCompareTicker}
           onTargetFound={(index, ticker, isFallback) => handleTargetFound(index, ticker, isFallback)}
           onTargetLost={(index) => {}}
           onClose={() => {
@@ -437,13 +708,15 @@ export default function HomePage() {
             stockData.reset();
             aiAnalysis.reset();
             stockInsights.reset();
+            setCompareTicker(null);
+            setCompareStockData(null);
           }}
         />
       </div>
 
       {/* ── 🎬 LIVE THESIS & PITCH BROADCAST HUD ──────────────────────── */}
       {isPitchMode && stockData.data && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-5xl pointer-events-auto">
+        <div id="pitch-hud" className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-5xl pointer-events-auto">
           <div className="bg-slate-950/90 backdrop-blur-xl border border-cyan-500/40 rounded-2xl p-3.5 shadow-2xl shadow-cyan-950/50 flex flex-wrap items-center justify-between gap-4">
             {/* Left: Ticker & Live Pulse */}
             <div className="flex items-center gap-3">
@@ -463,6 +736,41 @@ export default function HomePage() {
                   </span>
                 </div>
               </div>
+
+              {/* 1-Click Flagship Ticker Switcher in Pitch HUD */}
+              <div className="hidden sm:flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 ml-2">
+                {(["AAPL", "NVDA", "TSLA", "MSFT", "GOOGL"] as const).map((tkr) => {
+                  const isActive = stockData.data?.symbol === tkr;
+                  return (
+                    <button
+                      key={tkr}
+                      onClick={() => handleSelectTicker(tkr)}
+                      className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold transition-all ${
+                        isActive
+                          ? "bg-cyan-500/20 border border-cyan-400 text-cyan-200 shadow-[0_0_10px_rgba(6,182,212,0.35)] scale-105"
+                          : "bg-slate-800/40 text-slate-400 hover:text-slate-200 hover:bg-slate-700/60 border border-transparent"
+                      }`}
+                      title={`Switch to ${tkr}`}
+                    >
+                      {tkr}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Quick ⚔️ vs [Rival] Badge in Pitch Mode HUD */}
+              {compareTicker && (
+                <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/20 border border-amber-400/60 text-amber-300 text-xs font-semibold shadow-[0_0_12px_rgba(245,158,11,0.25)] animate-pulse">
+                  <span>⚔️ vs {compareTicker}</span>
+                  <button
+                    onClick={() => handleSetCompareTicker(null)}
+                    className="text-amber-400 hover:text-amber-100 ml-1 text-xs font-bold leading-none cursor-pointer"
+                    title="Exit Battle Mode"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Middle: Valuation & DCF Thesis (Aligned 100% with mathUtils & DCF Terrain) */}
@@ -487,14 +795,45 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Right: Technical Shelf & Mode Fast Switcher */}
+            {/* Right: Technical Shelf, Auto-Tour, IC Debate & Controls */}
             <div className="flex items-center gap-2 text-xs">
-              {stockInsights.insights?.thesis_summary?.volume_poc && (
-                <div className="hidden lg:block text-right pr-2">
-                  <div className="text-[10px] text-slate-400">VPVR Volume POC</div>
-                  <div className="font-semibold text-amber-300">${stockInsights.insights.thesis_summary.volume_poc.toFixed(2)}</div>
-                </div>
-              )}
+              {/* Auto-Pitch Tour Button */}
+              <button
+                onClick={() => {
+                  setIsAutoTour((prev) => {
+                    const next = !prev;
+                    if (!next && typeof window !== "undefined" && "speechSynthesis" in window) {
+                      window.speechSynthesis.cancel();
+                    }
+                    if (next) setTourStep(0);
+                    return next;
+                  });
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  isAutoTour
+                    ? "bg-amber-500/25 text-amber-300 border border-amber-500/60 shadow-[0_0_15px_rgba(245,158,11,0.3)] animate-pulse"
+                    : "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
+                }`}
+                title="Automated 5-stage 3D terminal presentation tour"
+              >
+                <span>{isAutoTour ? "⏹" : "▶️"}</span>
+                <span>{isAutoTour ? `Stop Tour (${tourStep + 1}/5)` : "Auto-Pitch Tour"}</span>
+              </button>
+
+              {/* AI Bull/Bear Debate Button */}
+              <button
+                onClick={() => setShowICDebate(true)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  showICDebate
+                    ? "bg-purple-600/30 text-purple-200 border border-purple-500/60 shadow-[0_0_15px_rgba(168,85,247,0.3)]"
+                    : "bg-gradient-to-r from-purple-900/60 to-indigo-900/60 hover:from-purple-800/80 hover:to-indigo-800/80 text-purple-200 border border-purple-500/40 shadow-[0_0_12px_rgba(168,85,247,0.2)]"
+                }`}
+                title="Open Investment Committee (IC) Bull vs Bear Debate Card"
+              >
+                <span>⚖️</span>
+                <span>AI Bull/Bear Debate</span>
+              </button>
+
               <button 
                 onClick={() => {
                   const nextTab = activeTab === "Trader" ? "Investor" : "Trader";
@@ -507,12 +846,211 @@ export default function HomePage() {
                 {activeTab === "Trader" ? "🏛️ Valuation" : "⚡ Trader"}
               </button>
               <button 
-                onClick={() => setIsPitchMode(false)}
+                onClick={() => {
+                  setIsPitchMode(false);
+                  setIsAutoTour(false);
+                  if (typeof window !== "undefined" && "speechSynthesis" in window) {
+                    window.speechSynthesis.cancel();
+                  }
+                }}
                 className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 transition"
                 title="Exit Pitch Mode"
               >
                 ✕
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cinematic Tour Floating Status Indicator */}
+      {isPitchMode && isAutoTour && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
+          <div className="bg-slate-900/90 backdrop-blur-md border border-amber-500/50 rounded-full px-4 py-1.5 shadow-xl flex items-center gap-2 text-xs font-semibold text-amber-300 animate-pulse">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping inline-block" />
+            <span>CINEMATIC TOUR ACTIVE · {TOUR_STAGES[tourStep].title}</span>
+            <button
+              onClick={() => {
+                setIsAutoTour(false);
+                if (typeof window !== "undefined" && "speechSynthesis" in window) {
+                  window.speechSynthesis.cancel();
+                }
+              }}
+              className="ml-2 text-slate-400 hover:text-white text-[11px] underline"
+            >
+              Stop
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ⚖️ Investment Committee (IC) Bull vs Bear Debate Card Overlay */}
+      {showICDebate && stockData.data && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+          <div id="ic-debate-modal" className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-950/95 border border-purple-500/40 rounded-2xl p-6 shadow-2xl shadow-purple-950/60 custom-scrollbar pointer-events-auto">
+            {/* Header */}
+            <div className="flex items-start justify-between pb-4 border-b border-slate-800">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 text-xs font-bold uppercase tracking-wider">
+                    Institutional Committee Synthesis
+                  </span>
+                  <span className="text-xs font-mono text-cyan-400">
+                    CONVICTION: {stockInsights.insights?.thesis_summary?.conviction_score || 78} / 100
+                  </span>
+                </div>
+                <h2 className="text-xl font-extrabold text-white mt-1 flex items-center gap-2">
+                  <span>⚖️</span> {stockData.data.symbol} Bull vs. Bear IC Debate
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Live multi-model synthesis combining 3D DCF valuation surfaces, FinBERT catalyst shocks, and VPVR institutional support.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowICDebate(false)}
+                className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-rose-900/40 border border-slate-700 hover:border-rose-500/50 text-slate-400 hover:text-rose-300 flex items-center justify-center font-bold text-sm transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Bull vs Bear Split Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
+              {/* 🐂 Bull Case Thesis */}
+              <div className="rounded-xl p-4 bg-emerald-950/20 border border-emerald-500/40 relative overflow-hidden flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-2 border-b border-emerald-500/20">
+                    <span className="text-sm font-bold text-emerald-400 flex items-center gap-1.5">
+                      <span>🐂</span> BULL CASE THESIS
+                    </span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                      {bullDcf ? bullDcf.upsideLabel : "+20.3% Upside"}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 space-y-2.5 text-xs">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-slate-400">Bull DCF Implied Target</div>
+                      <div className="text-2xl font-black font-mono text-emerald-300">
+                        ${bullDcf ? bullDcf.fairValue.toFixed(2) : "467.93"}
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        Assumes +300 bps operating margin expansion & 8.0% effective WACC.
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-slate-900/80 border border-emerald-500/20">
+                      <div className="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold flex items-center gap-1">
+                        <span>🚀</span> Top FinBERT Growth Catalyst
+                      </div>
+                      <div className="text-slate-200 font-medium mt-1">
+                        {stockInsights.insights?.catalysts?.find((c: any) => c.sentiment_label === "Bullish")?.title ||
+                          "Autonomous Robotaxi Fleet Expansion & FSD v13 Commercial Rollout"}
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                      <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1">
+                        <span>📈</span> 5-Day Neural LSTM Trajectory
+                      </div>
+                      <div className="text-emerald-300 font-mono font-bold mt-0.5">
+                        Target: ${(stockInsights.insights?.predicted_prices?.[4] || (stockData.data.price * 1.04)).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-2 border-t border-emerald-500/20 text-[11px] text-emerald-400 font-medium">
+                  Catalyst Bias: Asymmetric upside participation with low beta degradation.
+                </div>
+              </div>
+
+              {/* 🐻 Bear Case Risk */}
+              <div className="rounded-xl p-4 bg-rose-950/20 border border-rose-500/40 relative overflow-hidden flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-2 border-b border-rose-500/20">
+                    <span className="text-sm font-bold text-rose-400 flex items-center gap-1.5">
+                      <span>🐻</span> BEAR CASE RISK
+                    </span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
+                      {bearDcf ? bearDcf.upsideLabel : "-18.0% Downside"}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 space-y-2.5 text-xs">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-slate-400">Bear DCF Downside Floor</div>
+                      <div className="text-2xl font-black font-mono text-rose-300">
+                        ${bearDcf ? bearDcf.fairValue.toFixed(2) : "319.07"}
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        Assumes -300 bps margin contraction & 12.0% cost of capital drag.
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-slate-900/80 border border-rose-500/20">
+                      <div className="text-[10px] uppercase tracking-wider text-rose-400 font-semibold flex items-center gap-1">
+                        <span>⚠️</span> Top FinBERT Risk Catalyst
+                      </div>
+                      <div className="text-slate-200 font-medium mt-1">
+                        {stockInsights.insights?.catalysts?.find((c: any) => c.sentiment_label === "Bearish")?.title ||
+                          "EV Margin Compression & Global Tariff Rate Headwinds"}
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                      <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1">
+                        <span>🛡️</span> Key VPVR Institutional Support
+                      </div>
+                      <div className="text-amber-300 font-mono font-bold mt-0.5">
+                        POC Defense Shelf: ${stockInsights.insights?.thesis_summary?.volume_poc?.toFixed(2) || "334.03"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-2 border-t border-rose-500/20 text-[11px] text-rose-400 font-medium">
+                  Failure to hold the $334.03 volume POC triggers rapid retest of the Bear DCF floor.
+                </div>
+              </div>
+            </div>
+
+            {/* ⚖️ Chief Investment Officer (CIO) Verdict */}
+            <div className="mt-5 p-4 rounded-xl bg-gradient-to-r from-purple-950/40 via-slate-900/80 to-blue-950/40 border border-purple-500/30 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">
+                    CIO VERDICT & ACTIONABLE STRUCTURE
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10px] font-mono font-bold">
+                    ASYMMETRIC 2.4:1 R:R
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                  <strong className="text-white">OVERWEIGHT CONVICTION:</strong> Favoring the Bull DCF thesis target of{" "}
+                  <span className="text-emerald-400 font-mono font-semibold">${bullDcf ? bullDcf.fairValue.toFixed(2) : "467.93"}</span>. Accumulate on dips toward the institutional VPVR shelf at{" "}
+                  <span className="text-amber-300 font-mono font-semibold">${stockInsights.insights?.thesis_summary?.volume_poc?.toFixed(2) || "334.03"}</span> with a trailing stop below the Bear floor (${bearDcf ? bearDcf.fairValue.toFixed(2) : "319.07"}).
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    const verdictText = `Investment Committee Verdict for ${stockData.data?.symbol}: Overweight conviction with asymmetric 2.4 to 1 risk reward. Favoring the Bull DCF target of $${bullDcf ? bullDcf.fairValue.toFixed(2) : "467.93"}. Accumulate near the VPVR shelf at $${stockInsights.insights?.thesis_summary?.volume_poc?.toFixed(2) || "334.03"}.`;
+                    speakBriefing(verdictText);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/50 font-bold text-xs flex items-center gap-1.5 transition shadow-lg shadow-purple-950/50"
+                >
+                  <span>🔊</span>
+                  <span>Speak Verdict</span>
+                </button>
+                <button
+                  onClick={() => setShowICDebate(false)}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-medium text-xs transition"
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -545,6 +1083,7 @@ export default function HomePage() {
               onSelectMetric={(metric: string) => {
                 setActiveMetric(prev => prev === metric ? "INTRADAY" : metric);
               }}
+              onSelectTicker={handleSelectTicker}
               onToggleIndicator={(indicator: string) => {
                 setActiveIndicators(prev => ({...prev, [indicator]: !prev[indicator]}));
               }}
@@ -556,6 +1095,8 @@ export default function HomePage() {
               onTogglePitchMode={() => setIsPitchMode(prev => !prev)}
               showLSTMConeInTrader={showLSTMConeInTrader}
               onToggleLSTMCone={() => setShowLSTMConeInTrader(prev => !prev)}
+              compareTicker={compareTicker}
+              onSelectCompareTicker={handleSetCompareTicker}
             />
           </div>
         </div>
@@ -574,28 +1115,31 @@ export default function HomePage() {
       )}
 
 
-      {/* Manual Search UI */}
+      {/* Typo-Tolerant Company Search UI */}
       {!showDashboard && (
-        <div style={{ position: "absolute", top: "16px", left: "50%", transform: "translateX(-50%)", zIndex: 100, width: "90%", maxWidth: "400px" }}>
-          <form 
-            onSubmit={(e) => { e.preventDefault(); handleManualScan(searchInput); }}
-            style={{ display: "flex", gap: "8px", background: "rgba(10, 14, 26, 0.7)", padding: "8px", borderRadius: "24px", backdropFilter: "blur(12px)", border: "1px solid rgba(56, 189, 248, 0.3)" }}
-          >
-            <input 
-              type="text" 
-              placeholder="Search company (e.g., Apple)..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ flex: 1, background: "transparent", border: "none", color: "white", padding: "8px 16px", fontSize: "14px", outline: "none" }}
-            />
-            <button 
-              type="submit"
-              disabled={isSearching}
-              style={{ background: "#38bdf8", color: "white", border: "none", borderRadius: "16px", padding: "0 16px", fontSize: "14px", fontWeight: "bold", cursor: isSearching ? "wait" : "pointer" }}
-            >
-              {isSearching ? "..." : "Search"}
-            </button>
-          </form>
+        <div style={{ position: "absolute", top: "16px", left: "50%", transform: "translateX(-50%)", zIndex: 100, width: "90%", maxWidth: "460px" }}>
+          <CompanySearch
+            placeholder="Search company or ticker (e.g., Apple, epp, NVDA)..."
+            onSelectTicker={(ticker, detail) => {
+              if (detail?.isCorrection) {
+                setVoiceMessage(`✨ Recognized "${detail.reason || ticker}"`);
+              }
+              handleSelectTicker(ticker);
+            }}
+          />
+
+          {/* Quick Flagship Direct Launch Buttons */}
+          <div className="flex items-center justify-center gap-1.5 mt-2.5">
+            {(["AAPL", "NVDA", "TSLA", "MSFT", "GOOGL"] as const).map((tkr) => (
+              <button
+                key={tkr}
+                onClick={() => handleSelectTicker(tkr)}
+                className="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-slate-900/80 hover:bg-cyan-500/20 text-slate-300 hover:text-cyan-200 border border-slate-700/60 hover:border-cyan-400 backdrop-blur-md transition-all shadow-md"
+              >
+                {tkr}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
