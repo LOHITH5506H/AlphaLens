@@ -40,6 +40,7 @@ interface ARSceneProps {
   gestureScale?: number;
   gestureRotation?: number;
   isFrozen?: boolean;
+  isMiddlePinching?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -191,6 +192,7 @@ export default function ARScene({
   gestureScale = 1.0,
   gestureRotation = 0,
   isFrozen = false,
+  isMiddlePinching = false,
 }: ARSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mindarRef = useRef<any>(null);
@@ -408,7 +410,7 @@ export default function ARScene({
                 <OrbitControls
                   enablePan={true}
                   enableRotate={true}
-                  enableZoom={true}
+                  enableZoom={!isMiddlePinching}
                   enableDamping
                   dampingFactor={0.05}
                 />

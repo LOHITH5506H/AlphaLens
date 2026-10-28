@@ -504,6 +504,7 @@ export default function HomePage() {
   }, [gestureState.activeGesture]);
 
   const prevPinchRef = useRef(false);
+  const wasMiddlePinchingRef = useRef(false);
   const lastElementRef = useRef<Element | null>(null);
   const lastYRef = useRef(0);
 
@@ -538,12 +539,43 @@ export default function HomePage() {
       
       const element = document.elementFromPoint(clientX, clientY);
       
+      const wasMiddlePinching = wasMiddlePinchingRef.current;
+      wasMiddlePinchingRef.current = gestureState.isMiddlePinching;
+
       if (gestureState.isMiddlePinching) {
+        if (!wasMiddlePinching) {
+          lastYRef.current = clientY;
+        }
         const deltaY = clientY - lastYRef.current;
-        if (Math.abs(deltaY) > 2) {
-          if (element) {
-            const wheelEvent = new WheelEvent("wheel", { bubbles: true, cancelable: true, clientX, clientY, deltaY: deltaY * 3 });
-            element.dispatchEvent(wheelEvent);
+        if (Math.abs(deltaY) > 1.5) {
+          // Find scroll target: either an ancestor of element under cursor or active scrollable panel
+          let scrollTarget: HTMLElement | null = null;
+          let curr = element;
+          while (curr && curr !== document.body && curr !== document.documentElement) {
+            if (curr instanceof HTMLElement) {
+              const style = window.getComputedStyle(curr);
+              if (
+                (style.overflowY === "auto" || style.overflowY === "scroll") &&
+                curr.scrollHeight > curr.clientHeight
+              ) {
+                scrollTarget = curr;
+                break;
+              }
+            }
+            curr = curr.parentElement;
+          }
+
+          // Fallback to active modal or dashboard scroll area
+          if (!scrollTarget) {
+            scrollTarget =
+              (document.querySelector("#ic-debate-modal") as HTMLElement) ||
+              (document.querySelector(".overflow-y-auto") as HTMLElement);
+          }
+
+          if (scrollTarget) {
+            scrollTarget.scrollTop += deltaY * 2.5;
+          } else if (typeof window !== "undefined") {
+            window.scrollBy({ top: deltaY * 2.5, behavior: "auto" });
           }
           lastYRef.current = clientY;
         }
@@ -729,6 +761,7 @@ export default function HomePage() {
           gestureScale={gestureState.twoHandScale}
           gestureRotation={gestureState.twoHandRotation}
           isFrozen={isSimulationFrozen}
+          isMiddlePinching={gestureState.isMiddlePinching}
           compareTicker={compareTicker}
           compareStockData={compareStockData}
           onSelectCompareTicker={handleSetCompareTicker}
