@@ -37,6 +37,8 @@ interface ARSceneProps {
   compareTicker?: string | null;
   compareStockData?: StockData | null;
   onSelectCompareTicker?: (ticker: string | null) => void;
+  gestureScale?: number;
+  gestureRotation?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,6 +64,8 @@ const ARTracker = ({
   compareTicker,
   compareStockData,
   onSelectCompareTicker,
+  gestureScale = 1.0,
+  gestureRotation = 0,
 }: any) => {
   const { camera } = useThree();
   const groupRef = useRef<THREE.Group>(null);
@@ -90,7 +94,7 @@ const ARTracker = ({
 
   return (
     <group ref={groupRef} matrixAutoUpdate={false} visible={true}>
-      <group rotation={[Math.PI / 2, 0, 0]} scale={[1.2, 1.2, 1.2]}>
+      <group rotation={[Math.PI / 2, gestureRotation, 0]} scale={[gestureScale * 1.2, gestureScale * 1.2, gestureScale * 1.2]}>
         <Stock3DVisuals 
           data={stockData} 
           aiAnalysis={aiAnalysis} 
@@ -181,6 +185,8 @@ export default function ARScene({
   compareTicker,
   compareStockData,
   onSelectCompareTicker,
+  gestureScale = 1.0,
+  gestureRotation = 0,
 }: ARSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mindarRef = useRef<any>(null);
@@ -403,6 +409,7 @@ export default function ARScene({
                   dampingFactor={0.05}
                 />
                 <Center>
+                  <group scale={[gestureScale, gestureScale, gestureScale]} rotation={[0, gestureRotation, 0]}>
                   <Stock3DVisuals 
                     data={stockData} 
                     aiAnalysis={aiAnalysis} 
@@ -421,6 +428,7 @@ export default function ARScene({
                     compareStockData={compareStockData}
                     onSelectCompareTicker={onSelectCompareTicker}
                   />
+                  </group>
                 </Center>
               </>
             ) : (

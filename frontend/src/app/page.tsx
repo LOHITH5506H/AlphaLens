@@ -473,6 +473,36 @@ export default function HomePage() {
     }
   }, [gestureState.swipeDirection]);
 
+  // Handle Discrete Spatial Hand Gestures
+  const lastHandledGestureRef = useRef<string>("none");
+  useEffect(() => {
+    const gesture = gestureState.activeGesture;
+    if (gesture === lastHandledGestureRef.current) return;
+    lastHandledGestureRef.current = gesture;
+
+    if (gesture === "bull_thumbs_up") {
+      setScenarioParams({
+        wacc_delta: -0.015,
+        tgr_delta: 0.0075,
+        margin_delta: 0.03,
+        active_scenario: "bull",
+        preset: "Bull",
+      });
+    } else if (gesture === "bear_thumbs_down") {
+      setScenarioParams({
+        wacc_delta: 0.015,
+        tgr_delta: -0.0075,
+        margin_delta: -0.03,
+        active_scenario: "bear",
+        preset: "Bear",
+      });
+    } else if (gesture === "v_sign") {
+      setIsPitchMode((prev) => !prev);
+    } else if (gesture === "open_palm") {
+      setShowDashboard((prev) => !prev);
+    }
+  }, [gestureState.activeGesture]);
+
   const prevPinchRef = useRef(false);
   const lastElementRef = useRef<Element | null>(null);
   const lastYRef = useRef(0);
@@ -696,6 +726,8 @@ export default function HomePage() {
           onPinchStateChange={setIsPinching}
           scenarioParams={scenarioParams}
           showLSTMConeInTrader={showLSTMConeInTrader}
+          gestureScale={gestureState.twoHandScale}
+          gestureRotation={gestureState.twoHandRotation}
           compareTicker={compareTicker}
           compareStockData={compareStockData}
           onSelectCompareTicker={handleSetCompareTicker}
@@ -1184,6 +1216,9 @@ export default function HomePage() {
             coordsRef={coordsRef} 
             isPinching={gestureState.isPinching} 
             isVisible={gestureState.isVisible} 
+            activeGesture={gestureState.activeGesture}
+            gestureFeedback={gestureState.gestureFeedback}
+            isTwoHandPinching={gestureState.isTwoHandPinching}
           />
         </>
       )}

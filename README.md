@@ -247,7 +247,24 @@ Built for senior analysts delivering live executive briefings:
    * Click **Contagion Graph** to simulate 2nd-order supply chain disruptions.
    * Click **Timing & Technicals** to inspect the 3D VPVR volume shelves and options IV smile.
    * Click **🎬 Pitch Mode** to activate the autonomous 5-stage camera tour or trigger the **Bull vs. Bear IC Debate**.
-   * Toggle **✋ Gestures On** to control the terminal via optical hand gestures.
+   * Toggle **✋ Gestures On** to activate optical hand tracking (Apple VisionOS / Meta Quest spatial standard).
+
+### Spatial Hand Gesture Control Suite (VisionOS & Meta Quest Standard)
+
+| Optical Gesture | Hand Pose | Terminal Action & Financial Impact |
+| :--- | :--- | :--- |
+| **🚀 Bull Thumbs Up** | Fist with Thumb pointing vertically UP (hold ~250ms) | Triggers **FinBERT Bull Shock** ($\Delta \text{WACC} = -1.50\%$, $\Delta g = +0.75\%$, $\Delta \text{Margin} = +3.00\%$) |
+| **⚠️ Bear Thumbs Down** | Fist with Thumb pointing vertically DOWN (hold ~250ms) | Triggers **FinBERT Bear Stress Shock** ($\Delta \text{WACC} = +1.50\%$, $\Delta g = -0.75\%$, $\Delta \text{Margin} = -3.00\%$) |
+| **🔍 Two-Hand Pinch & Scale** | Both hands pinch (Thumb + Index) & stretch / contract | **3D Spatial Scaling**: Physically expands or contracts the 3D DCF elevation manifold, contagion network, or options surface |
+| **🔄 Two-Hand Yaw & Orbit** | Both hands pinch (Thumb + Index) & rotate around centroid | **3D Spatial Rotation**: Smoothly orbits and tilts 3D manifolds in space without a mouse |
+| **🎬 "V" Sign (Peace)** | Index & Middle fingers extended in a V-shape | Toggles **Pitch Studio / IC Debate Broadcast HUD** |
+| **✋ Open Palm to Camera** | Flat open hand with all 5 fingers spread towards camera | Toggles **Spatial HUD Overlay** for unobstructed holographic inspection |
+| **↔ Horizontal Air Swipe** | Fast horizontal flick left or right across camera frame | Swipes between **Investor Mode** (DCF Manifold / Contagion) and **Trader Mode** (VPVR / IV Surface) |
+| **● Air Pinch Click** | Index tip and Thumb tip tap together | Direct 2D click & interaction on UI buttons, sliders, and ticker switcher pills |
+| **↕ Middle Air Scroll** | Middle finger tip and Thumb tip pinch together + vertical move | Smoothly scrolls lists, financials tables, and news catalyst feeds |
+| **🎯 Two-Finger Crosshair** | Index & Middle fingers extended parallel together | Precision spatial crosshair reticle for targeted inspection |
+| **✊ Fist Clench** | All fingers curled tightly into a fist | Holds / freezes animated node pulses and simulation sweeps |
+
    * Click the microphone or use voice shortcuts (*"stress test bear"*, *"show dcf"*, *"show peers"*, *"switch to trader"*).
 
 ---
