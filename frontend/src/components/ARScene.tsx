@@ -7,7 +7,6 @@ import { Environment, Center, OrbitControls, PerspectiveCamera } from "@react-th
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 
 import { MARKER_MAPPINGS } from "@/lib/constants";
-import { recognizeLogo } from "@/lib/api";
 import type { StockData, AIAnalysis, StockInsights, FundamentalMetricResponse } from "@/types";
 import Stock3DVisuals from "./Stock3DVisuals";
 
@@ -199,8 +198,6 @@ export default function ARScene({
   const [anchors, setAnchors] = useState<any[]>([]);
   const [status, setStatus] = useState<"initializing" | "ready" | "error">("initializing");
   const [errorMessage, setErrorMessage] = useState<string>("");
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanMessage, setScanMessage] = useState<string | null>(null);
 
   // ── Camera/Theme Toggle ──────────────────────────────────────────────────
   const [showArBackground, setShowArBackground] = useState(true);
@@ -286,43 +283,6 @@ export default function ARScene({
       }
     };
   }, []);
-
-  const handleManualScan = async () => {
-    if (!containerRef.current || isScanning) return;
-    const video = containerRef.current.querySelector('video');
-    if (!video) {
-      setScanMessage("Camera not found");
-      return;
-    }
-
-    setIsScanning(true);
-    setScanMessage("Analyzing with Gemini Vision...");
-
-    try {
-      const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Could not get canvas context");
-
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const base64Image = canvas.toDataURL("image/jpeg", 0.8);
-
-      const ticker = await recognizeLogo(base64Image);
-
-      if (ticker === "NONE") {
-        setScanMessage("No logo detected. Please try again.");
-      } else {
-        setScanMessage(`Detected: ${ticker}`);
-        onTargetFoundRef.current(0, ticker, true);
-      }
-    } catch (err) {
-      setScanMessage("Error analyzing image.");
-    } finally {
-      setIsScanning(false);
-      setTimeout(() => setScanMessage(null), 3000);
-    }
-  };
 
   // ── Determine background based on toggle state ─────────────────────────
   const canvasBackground = (() => {
@@ -597,48 +557,6 @@ export default function ARScene({
             >
               📷 Point camera at a company logo
             </div>
-          </div>
-          <div
-            style={{
-              position: "fixed",
-              bottom: "32px",
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 100,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "12px",
-            }}
-          >
-            {scanMessage && (
-              <div
-                style={{
-                  background: "rgba(0,0,0,0.8)",
-                  padding: "8px 16px",
-                  borderRadius: "12px",
-                  color: "#fff",
-                  fontSize: "14px",
-                  backdropFilter: "blur(4px)",
-                }}
-              >
-                {scanMessage}
-              </div>
-            )}
-            <GlassButton
-              onClick={handleManualScan}
-              disabled={isScanning}
-              style={{
-                padding: "14px 28px",
-                fontSize: "15px",
-                background: isScanning
-                  ? "rgba(100, 116, 139, 0.5)"
-                  : "rgba(59, 130, 246, 0.4)",
-                border: "1px solid rgba(59, 130, 246, 0.4)",
-              }}
-            >
-              {isScanning ? "Scanning..." : "🔍 Analyze Logo"}
-            </GlassButton>
           </div>
         </>
       )}

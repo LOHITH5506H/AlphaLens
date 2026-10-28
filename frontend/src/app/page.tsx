@@ -3,7 +3,6 @@
 import dynamic from "next/dynamic";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 
-import VoiceButton from "@/components/VoiceButton";
 import ARDashboard from "@/components/ARDashboard";
 import { useStockData } from "@/hooks/useStockData";
 import { useAIAnalysis } from "@/hooks/useAIAnalysis";
@@ -458,12 +457,12 @@ export default function HomePage() {
 
     // Handle Hand Gestures (Responsive Tab Switching)
   useEffect(() => {
-    if (!gestureState.swipeDirection) return;
+    if (!isHandTrackingEnabled || !gestureState.swipeDirection) return;
     setActiveTab((prev) => (prev === "Investor" ? "Trader" : "Investor"));
-  }, [gestureState.swipeDirection]);
+  }, [isHandTrackingEnabled, gestureState.swipeDirection]);
 
   // Handle Simulation Freeze / Fist Hold
-  const isSimulationFrozen = gestureState.activeGesture === "fist";
+  const isSimulationFrozen = isHandTrackingEnabled && gestureState.activeGesture === "fist";
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     if (isSimulationFrozen) {
@@ -476,6 +475,10 @@ export default function HomePage() {
   // Handle Discrete Spatial Hand Gestures
   const lastHandledGestureRef = useRef<string>("none");
   useEffect(() => {
+    if (!isHandTrackingEnabled) {
+      lastHandledGestureRef.current = "none";
+      return;
+    }
     const gesture = gestureState.activeGesture;
     if (gesture === lastHandledGestureRef.current) return;
     lastHandledGestureRef.current = gesture;
@@ -501,7 +504,7 @@ export default function HomePage() {
     } else if (gesture === "open_palm") {
       setShowDashboard((prev) => !prev);
     }
-  }, [gestureState.activeGesture]);
+  }, [isHandTrackingEnabled, gestureState.activeGesture]);
 
   const prevPinchRef = useRef(false);
   const wasMiddlePinchingRef = useRef(false);
@@ -529,7 +532,7 @@ export default function HomePage() {
 
   // Handle continuous pointermove outside of React state
   useEffect(() => {
-    if (!gestureState.isVisible) return;
+    if (!isHandTrackingEnabled || !gestureState.isVisible) return;
     
     let rafId: number;
     
@@ -595,18 +598,32 @@ export default function HomePage() {
     
     rafId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafId);
-  }, [gestureState.isVisible, gestureState.isMiddlePinching, coordsRef]);
+  }, [isHandTrackingEnabled, gestureState.isVisible, gestureState.isMiddlePinching, coordsRef]);
 
   // Handle discrete pointerdown/up and AR state sync
   useEffect(() => {
-    if (gestureState.isVisible) {
-      setIsPinching(gestureState.isPinching);
-    }
-
-    if (!gestureState.isVisible) {
+    if (!isHandTrackingEnabled || !gestureState.isVisible) {
+      setIsPinching(false);
+      if (prevPinchRef.current && lastElementRef.current) {
+        try {
+          const upEvent = new PointerEvent("pointerup", {
+            bubbles: true,
+            cancelable: true,
+            clientX: coordsRef.current.x * window.innerWidth,
+            clientY: coordsRef.current.y * window.innerHeight,
+            pointerId: 99,
+            pointerType: "mouse",
+            buttons: 0,
+          });
+          lastElementRef.current.dispatchEvent(upEvent);
+        } catch {}
+      }
+      lastElementRef.current = null;
       prevPinchRef.current = false;
       return;
     }
+
+    setIsPinching(gestureState.isPinching);
 
     const clientX = coordsRef.current.x * window.innerWidth;
     const clientY = coordsRef.current.y * window.innerHeight;
@@ -635,7 +652,7 @@ export default function HomePage() {
     }
 
     prevPinchRef.current = gestureState.isPinching;
-  }, [gestureState.isPinching, gestureState.isMiddlePinching, gestureState.isVisible, coordsRef]);
+  }, [isHandTrackingEnabled, gestureState.isPinching, gestureState.isMiddlePinching, gestureState.isVisible, coordsRef]);
 
   // Derived data for HUD
   const price = stockData.data?.price ?? 0;
@@ -758,10 +775,10 @@ export default function HomePage() {
           onPinchStateChange={setIsPinching}
           scenarioParams={scenarioParams}
           showLSTMConeInTrader={showLSTMConeInTrader}
-          gestureScale={gestureState.twoHandScale}
-          gestureRotation={gestureState.twoHandRotation}
-          isFrozen={isSimulationFrozen}
-          isMiddlePinching={gestureState.isMiddlePinching}
+          gestureScale={isHandTrackingEnabled ? gestureState.twoHandScale : 1.0}
+          gestureRotation={isHandTrackingEnabled ? gestureState.twoHandRotation : 0}
+          isFrozen={isHandTrackingEnabled && isSimulationFrozen}
+          isMiddlePinching={isHandTrackingEnabled && gestureState.isMiddlePinching}
           compareTicker={compareTicker}
           compareStockData={compareStockData}
           onSelectCompareTicker={handleSetCompareTicker}
@@ -1211,13 +1228,6 @@ export default function HomePage() {
 
       {mounted && (
         <>
-          <VoiceButton
-            isListening={speech.isListening}
-            isSupported={speech.isSupported}
-            transcript={speech.transcript}
-            onStart={speech.startListening}
-            onStop={speech.stopListening}
-          />
           {/* Hand Tracking Toggle — Top right next to Camera button */}
           <button
             onClick={() => setIsHandTrackingEnabled(!isHandTrackingEnabled)}
@@ -1259,7 +1269,7 @@ export default function HomePage() {
       <HandCursor 
             coordsRef={coordsRef} 
             isPinching={gestureState.isPinching} 
-            isVisible={gestureState.isVisible} 
+            isVisible={isHandTrackingEnabled && gestureState.isVisible} 
             activeGesture={gestureState.activeGesture}
             gestureFeedback={gestureState.gestureFeedback}
             isTwoHandPinching={gestureState.isTwoHandPinching}

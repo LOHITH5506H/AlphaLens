@@ -51,19 +51,21 @@ function dist3D(p1: { x: number; y: number; z?: number }, p2: { x: number; y: nu
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+const INITIAL_GESTURE_STATE: HandGestureState = {
+  activeGesture: "none",
+  isPinching: false,
+  isMiddlePinching: false,
+  swipeDirection: null,
+  isVisible: false,
+  handCount: 0,
+  twoHandScale: 1.0,
+  twoHandRotation: 0,
+  gestureFeedback: null,
+  isTwoHandPinching: false,
+};
+
 export function useHandTracking(enabled: boolean = true) {
-  const [gestureState, setGestureState] = useState<HandGestureState>({
-    activeGesture: "none",
-    isPinching: false,
-    isMiddlePinching: false,
-    swipeDirection: null,
-    isVisible: false,
-    handCount: 0,
-    twoHandScale: 1.0,
-    twoHandRotation: 0,
-    gestureFeedback: null,
-    isTwoHandPinching: false,
-  });
+  const [gestureState, setGestureState] = useState<HandGestureState>(INITIAL_GESTURE_STATE);
 
   const coordsRef = useRef<HandTrackingCoords>({ x: 0, y: 0, hasSecondHand: false });
 
@@ -113,10 +115,34 @@ export function useHandTracking(enabled: boolean = true) {
     }, 2400);
   }, []);
 
+  const resetInternalTracking = useCallback(() => {
+    isAliveRef.current = false;
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+    if (feedbackTimeoutRef.current) {
+      clearTimeout(feedbackTimeoutRef.current);
+      feedbackTimeoutRef.current = null;
+    }
+    coordsRef.current = { x: 0, y: 0, hasSecondHand: false };
+    pinchStateRef.current = { index: false, middle: false };
+    twoHandBaseRef.current = null;
+    holdGestureRef.current = { type: "none", startTime: 0, triggered: false };
+    prevPalmRef.current = null;
+    handSpeedRef.current = 0;
+    swipeHistoryRef.current = [];
+    scaleRef.current = 1.0;
+    rotationRef.current = 0;
+    setGestureState(INITIAL_GESTURE_STATE);
+  }, []);
+
   const onResults = useCallback((results: any) => {
+    if (!isAliveRef.current) return;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
     rafRef.current = requestAnimationFrame(() => {
+      if (!isAliveRef.current) return;
       const hands = results.multiHandLandmarks;
       const handCount = hands ? hands.length : 0;
 
@@ -436,16 +462,31 @@ export function useHandTracking(enabled: boolean = true) {
 
   useEffect(() => {
     if (!enabled) {
+      resetInternalTracking();
       if (cameraRef.current) {
-        cameraRef.current.stop();
+        try { cameraRef.current.stop(); } catch {}
+        cameraRef.current = null;
       }
-      setGestureState((prev) => ({
-        ...prev,
-        isVisible: false,
-        activeGesture: "none",
-        handCount: 0,
-        isTwoHandPinching: false,
-      }));
+      if (handsRef.current) {
+        try { handsRef.current.close(); } catch {}
+        handsRef.current = null;
+      }
+      if (videoRef.current) {
+        try {
+          if (videoRef.current.srcObject) {
+            const stream = videoRef.current.srcObject as MediaStream;
+            stream.getTracks().forEach((track) => {
+              try { track.stop(); } catch {}
+            });
+            videoRef.current.srcObject = null;
+          }
+          videoRef.current.pause();
+          if (videoRef.current.parentNode) {
+            videoRef.current.parentNode.removeChild(videoRef.current);
+          }
+        } catch {}
+        videoRef.current = null;
+      }
       return;
     }
 
@@ -473,15 +514,11 @@ export function useHandTracking(enabled: boolean = true) {
     hands.onResults(onResults);
     handsRef.current = hands;
 
-    let videoElement = document.querySelector("#mindar-container video") as HTMLVideoElement;
-    let isCustomVideo = false;
-
-    if (!videoElement) {
-      videoElement = document.createElement("video");
-      videoElement.style.display = "none";
-      document.body.appendChild(videoElement);
-      isCustomVideo = true;
-    }
+    const videoElement = document.createElement("video");
+    videoElement.playsInline = true;
+    videoElement.muted = true;
+    videoElement.style.display = "none";
+    document.body.appendChild(videoElement);
     videoRef.current = videoElement;
 
     const camera = new CameraClass(videoElement, {
@@ -502,27 +539,36 @@ export function useHandTracking(enabled: boolean = true) {
     cameraRef.current = camera;
 
     return () => {
-      isAliveRef.current = false;
-
-      if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
+      resetInternalTracking();
 
       if (cameraRef.current) {
-        cameraRef.current.stop();
+        try { cameraRef.current.stop(); } catch {}
         cameraRef.current = null;
       }
 
       if (handsRef.current) {
-        try {
-          handsRef.current.close();
-        } catch {}
+        try { handsRef.current.close(); } catch {}
         handsRef.current = null;
       }
 
-      if (isCustomVideo && videoElement && videoElement.parentNode) {
-        videoElement.parentNode.removeChild(videoElement);
+      if (videoRef.current) {
+        try {
+          if (videoRef.current.srcObject) {
+            const stream = videoRef.current.srcObject as MediaStream;
+            stream.getTracks().forEach((track) => {
+              try { track.stop(); } catch {}
+            });
+            videoRef.current.srcObject = null;
+          }
+          videoRef.current.pause();
+          if (videoRef.current.parentNode) {
+            videoRef.current.parentNode.removeChild(videoRef.current);
+          }
+        } catch {}
+        videoRef.current = null;
       }
     };
-  }, [enabled, onResults]);
+  }, [enabled, onResults, resetInternalTracking]);
 
   return { gestureState, coordsRef };
 }
