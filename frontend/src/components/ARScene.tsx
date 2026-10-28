@@ -39,6 +39,7 @@ interface ARSceneProps {
   onSelectCompareTicker?: (ticker: string | null) => void;
   gestureScale?: number;
   gestureRotation?: number;
+  isFrozen?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ const ARTracker = ({
   onSelectCompareTicker,
   gestureScale = 1.0,
   gestureRotation = 0,
+  isFrozen = false,
 }: any) => {
   const { camera } = useThree();
   const groupRef = useRef<THREE.Group>(null);
@@ -112,6 +114,7 @@ const ARTracker = ({
           compareTicker={compareTicker}
           compareStockData={compareStockData}
           onSelectCompareTicker={onSelectCompareTicker}
+          isFrozen={isFrozen}
         />
       </group>
     </group>
@@ -187,6 +190,7 @@ export default function ARScene({
   onSelectCompareTicker,
   gestureScale = 1.0,
   gestureRotation = 0,
+  isFrozen = false,
 }: ARSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mindarRef = useRef<any>(null);
@@ -427,6 +431,7 @@ export default function ARScene({
                     compareTicker={compareTicker}
                     compareStockData={compareStockData}
                     onSelectCompareTicker={onSelectCompareTicker}
+                    isFrozen={isFrozen}
                   />
                   </group>
                 </Center>

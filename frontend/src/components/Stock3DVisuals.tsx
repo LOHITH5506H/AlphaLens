@@ -48,6 +48,7 @@ interface Stock3DVisualsProps {
   compareTicker?: string | null;
   compareStockData?: StockData | null;
   onSelectCompareTicker?: (ticker: string | null) => void;
+  isFrozen?: boolean;
 }
 
 // ── 1. Sci-Fi Gyroscopic Rotating HUD Ring ─────────────────────────────────
@@ -1718,6 +1719,7 @@ export default function Stock3DVisuals({
   compareTicker,
   compareStockData,
   onSelectCompareTicker,
+  isFrozen = false,
 }: Stock3DVisualsProps) {
   const coreRef = useRef<THREE.Group>(null);
   const mainGroupRef = useRef<THREE.Group>(null);
@@ -1866,6 +1868,7 @@ export default function Stock3DVisuals({
 
   // Dynamic Pulsing Animation for the AI Core
   useFrame(({ clock }) => {
+    if (isFrozen) return;
     const t = clock.getElapsedTime();
     if (coreRef.current) {
       const pulse = 1 + Math.sin(t * 3) * 0.08;

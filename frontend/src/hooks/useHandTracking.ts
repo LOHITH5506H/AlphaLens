@@ -23,7 +23,7 @@ export interface HandGestureState {
   swipeDirection: "left" | "right" | null;
   isVisible: boolean;
   handCount: number;
-  twoHandScale: number; // e.g. 1.0 (clamped 0.5 - 2.5)
+  twoHandScale: number; // e.g. 1.0 (clamped 0.5 - 2.8)
   twoHandRotation: number; // in radians
   gestureFeedback: string | null;
   isTwoHandPinching: boolean;
@@ -75,9 +75,14 @@ export function useHandTracking(enabled: boolean = true) {
   const pinchStateRef = useRef({ index: false, middle: false });
   const rafRef = useRef<number>(0);
 
-  // Position history for swipe detection
-  const historyRef = useRef<{ x: number; y: number; time: number }[]>([]);
+  // Position history for palm centroid velocity & swipe detection
+  const swipeHistoryRef = useRef<{ x: number; y: number; time: number }[]>([]);
   const lastSwipeTimeRef = useRef<number>(0);
+  const suppressStaticUntilRef = useRef<number>(0);
+
+  // Speed calculation buffer
+  const prevPalmRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const handSpeedRef = useRef<number>(0);
 
   // Discrete gesture hold & trigger tracking
   const holdGestureRef = useRef<{
@@ -133,6 +138,8 @@ export function useHandTracking(enabled: boolean = true) {
         twoHandBaseRef.current = null;
         coordsRef.current.hasSecondHand = false;
         holdGestureRef.current = { type: "none", startTime: 0, triggered: false };
+        prevPalmRef.current = null;
+        handSpeedRef.current = 0;
         return;
       }
 
@@ -143,19 +150,32 @@ export function useHandTracking(enabled: boolean = true) {
       const thumbTip0 = lm0[4];
       const indexTip0 = lm0[8];
       const middleTip0 = lm0[12];
+      const wrist0 = lm0[0];
 
+      // Screen cursor position from index tip
       const primaryX = 1 - indexTip0.x;
       const primaryY = indexTip0.y;
-
       coordsRef.current.x = primaryX;
       coordsRef.current.y = primaryY;
 
-      // Update position history for swipe detection
-      historyRef.current.push({ x: primaryX, y: primaryY, time: now });
-      if (historyRef.current.length > 25) {
-        historyRef.current = historyRef.current.slice(-25);
+      // Robust Palm Centroid for Motion & Swipe Tracking
+      const palmX = 1 - (wrist0.x + lm0[5].x + lm0[9].x + lm0[17].x) / 4;
+      const palmY = (wrist0.y + lm0[5].y + lm0[9].y + lm0[17].y) / 4;
+
+      // Calculate instantaneous hand speed
+      if (prevPalmRef.current) {
+        const dtSec = (now - prevPalmRef.current.time) / 1000;
+        if (dtSec > 0.01) {
+          const moveDist = dist2D({ x: palmX, y: palmY }, prevPalmRef.current);
+          const currentSpeed = moveDist / dtSec;
+          handSpeedRef.current = handSpeedRef.current * 0.6 + currentSpeed * 0.4;
+        }
       }
-      historyRef.current = historyRef.current.filter((p) => now - p.time <= 300);
+      prevPalmRef.current = { x: palmX, y: palmY, time: now };
+
+      // Update position history for swipe detection
+      swipeHistoryRef.current.push({ x: palmX, y: palmY, time: now });
+      swipeHistoryRef.current = swipeHistoryRef.current.filter((p) => now - p.time <= 280);
 
       // Check pinches for primary hand
       const PINCH_ENGAGE = 0.042;
@@ -223,22 +243,64 @@ export function useHandTracking(enabled: boolean = true) {
         twoHandBaseRef.current = null;
       }
 
-      // Geometric finger extension classifiers for Hand 0
-      const wrist = lm0[0];
-      const isIndexExt = dist3D(lm0[8], wrist) > dist3D(lm0[6], wrist) * 1.15;
-      const isMiddleExt = dist3D(lm0[12], wrist) > dist3D(lm0[10], wrist) * 1.15;
-      const isRingExt = dist3D(lm0[16], wrist) > dist3D(lm0[14], wrist) * 1.15;
-      const isPinkyExt = dist3D(lm0[20], wrist) > dist3D(lm0[18], wrist) * 1.15;
+      // ─────────────────────────────────────────────────────────────────────────
+      // 1. Horizontal Swipe Detection (High Priority Motion Gesture)
+      // ─────────────────────────────────────────────────────────────────────────
+      let detectedSwipe: "left" | "right" | null = null;
+      if (
+        !isIndexPinching0 &&
+        !isMiddlePinching0 &&
+        swipeHistoryRef.current.length >= 3 &&
+        now - lastSwipeTimeRef.current > 750
+      ) {
+        const oldest = swipeHistoryRef.current[0];
+        const dx = palmX - oldest.x;
+        const dy = palmY - oldest.y;
+        const dt = (now - oldest.time) / 1000;
+        const vx = dt > 0 ? dx / dt : 0;
 
-      const isIndexCurled = dist3D(lm0[8], wrist) < dist3D(lm0[6], wrist) * 1.05;
-      const isMiddleCurled = dist3D(lm0[12], wrist) < dist3D(lm0[10], wrist) * 1.05;
-      const isRingCurled = dist3D(lm0[16], wrist) < dist3D(lm0[14], wrist) * 1.05;
-      const isPinkyCurled = dist3D(lm0[20], wrist) < dist3D(lm0[18], wrist) * 1.05;
+        // Decisive horizontal swipe: fast velocity, horizontal displacement dominates vertical
+        if (Math.abs(dx) > 0.13 && Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(vx) > 0.55) {
+          detectedSwipe = dx > 0 ? "right" : "left";
+          lastSwipeTimeRef.current = now;
+          // CRUCIAL: Suppress static gestures (especially open palm) during/after swiping
+          suppressStaticUntilRef.current = now + 900;
+          holdGestureRef.current = { type: "none", startTime: 0, triggered: false };
+        }
+      }
 
-      const allFingersCurled = isIndexCurled && isMiddleCurled && isRingCurled && isPinkyCurled;
-      const allFingersExtended = isIndexExt && isMiddleExt && isRingExt && isPinkyExt;
+      // Check whether hand is currently moving quickly
+      const isHandInMotion = handSpeedRef.current > 0.28 || now < suppressStaticUntilRef.current;
 
-      // Identify Current Pose Candidate
+      // ─────────────────────────────────────────────────────────────────────────
+      // 2. Anatomical Finger Pose Classifiers
+      // ─────────────────────────────────────────────────────────────────────────
+      // Extended checks: Tip significantly farther from wrist than PIP
+      const isIndexExt = dist3D(lm0[8], wrist0) > dist3D(lm0[6], wrist0) * 1.25;
+      const isMiddleExt = dist3D(lm0[12], wrist0) > dist3D(lm0[10], wrist0) * 1.25;
+      const isRingExt = dist3D(lm0[16], wrist0) > dist3D(lm0[14], wrist0) * 1.25;
+      const isPinkyExt = dist3D(lm0[20], wrist0) > dist3D(lm0[18], wrist0) * 1.25;
+
+      // Curled checks: Tip tucked near MCP or wrist
+      const isIndexCurled =
+        dist3D(lm0[8], lm0[5]) < dist3D(lm0[6], lm0[5]) * 1.15 ||
+        dist3D(lm0[8], wrist0) < dist3D(lm0[6], wrist0) * 1.05;
+      const isMiddleCurled =
+        dist3D(lm0[12], lm0[9]) < dist3D(lm0[10], lm0[9]) * 1.15 ||
+        dist3D(lm0[12], wrist0) < dist3D(lm0[10], wrist0) * 1.05;
+      const isRingCurled =
+        dist3D(lm0[16], lm0[13]) < dist3D(lm0[14], lm0[13]) * 1.15 ||
+        dist3D(lm0[16], wrist0) < dist3D(lm0[14], wrist0) * 1.05;
+      const isPinkyCurled =
+        dist3D(lm0[20], lm0[17]) < dist3D(lm0[18], lm0[17]) * 1.15 ||
+        dist3D(lm0[20], wrist0) < dist3D(lm0[18], wrist0) * 1.05;
+
+      const allFourFingersCurled = isIndexCurled && isMiddleCurled && isRingCurled && isPinkyCurled;
+      const allFourFingersExtended = isIndexExt && isMiddleExt && isRingExt && isPinkyExt;
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // 3. Pose Classification
+      // ─────────────────────────────────────────────────────────────────────────
       let detectedPose: GestureType = "none";
 
       if (isTwoHandPinchActive) {
@@ -247,75 +309,76 @@ export function useHandTracking(enabled: boolean = true) {
         detectedPose = "pinch";
       } else if (isMiddlePinching0) {
         detectedPose = "middle_pinch";
-      } else if (allFingersCurled) {
-        // Check Thumbs Up / Thumbs Down / Fist
+      } else if (allFourFingersCurled) {
         const thumbTip = lm0[4];
         const thumbIP = lm0[3];
         const thumbMCP = lm0[2];
 
-        // Upright screen space: lower y means higher on screen
-        if (thumbTip.y < thumbIP.y && thumbIP.y < thumbMCP.y && thumbTip.y < wrist.y - 0.07) {
+        // Is thumb tucked against fingers (Fist)?
+        const thumbTucked = dist3D(thumbTip, lm0[9]) < 0.14 || dist3D(thumbTip, lm0[10]) < 0.14;
+
+        if (
+          !isHandInMotion &&
+          thumbTip.y < thumbIP.y - 0.035 &&
+          thumbIP.y < thumbMCP.y &&
+          thumbTip.y < wrist0.y - 0.08 &&
+          Math.abs(thumbTip.x - thumbMCP.x) < 0.1
+        ) {
           detectedPose = "bull_thumbs_up";
-        } else if (thumbTip.y > thumbIP.y && thumbIP.y > thumbMCP.y && thumbTip.y > wrist.y + 0.07) {
+        } else if (
+          !isHandInMotion &&
+          thumbTip.y > thumbIP.y + 0.035 &&
+          thumbIP.y > thumbMCP.y &&
+          thumbTip.y > wrist0.y + 0.08 &&
+          Math.abs(thumbTip.x - thumbMCP.x) < 0.1
+        ) {
           detectedPose = "bear_thumbs_down";
-        } else if (dist3D(thumbTip, lm0[9]) < 0.14) {
+        } else if (thumbTucked || dist3D(thumbTip, wrist0) < 0.18) {
+          // Robust Fist / Simulation Hold
           detectedPose = "fist";
         }
       } else if (isIndexExt && isMiddleExt && isRingCurled && isPinkyCurled) {
-        // V-Sign or Two-Finger Point
         const indexMiddleDist = dist2D(lm0[8], lm0[12]);
-        if (indexMiddleDist > 0.055) {
+        if (!isHandInMotion && indexMiddleDist > 0.055) {
           detectedPose = "v_sign";
         } else {
           detectedPose = "two_finger_point";
         }
-      } else if (allFingersExtended) {
+      } else if (allFourFingersExtended) {
         const thumbPinkyDist = dist2D(lm0[4], lm0[17]);
-        if (thumbPinkyDist > 0.13) {
+        // Strict Open Palm: Must be stationary, not in swipe motion, thumb spread
+        if (!isHandInMotion && thumbPinkyDist > 0.14) {
           detectedPose = "open_palm";
         }
       }
 
-      // Check Swipe Detection (when hand is in open or pointing posture)
-      let detectedSwipe: "left" | "right" | null = null;
-      if (
-        !isIndexPinching0 &&
-        !isMiddlePinching0 &&
-        historyRef.current.length >= 4 &&
-        now - lastSwipeTimeRef.current > 700
-      ) {
-        const oldest = historyRef.current[0];
-        const dx = primaryX - oldest.x;
-        const dy = primaryY - oldest.y;
-        const dt = (now - oldest.time) / 1000;
-        const vx = dt > 0 ? dx / dt : 0;
+      // ─────────────────────────────────────────────────────────────────────────
+      // 4. Discrete Action Hold State-Machine (Prevents False Triggers)
+      // ─────────────────────────────────────────────────────────────────────────
+      // Strict hold thresholds: Open Palm requires deliberate 480ms hold
+      const HOLD_THRESHOLDS: Record<string, number> = {
+        open_palm: 480,
+        bull_thumbs_up: 350,
+        bear_thumbs_down: 350,
+        v_sign: 400,
+        fist: 100, // Fist activates quickly to pause simulation instantly
+      };
 
-        if (Math.abs(dx) > 0.16 && Math.abs(dx) > Math.abs(dy) * 1.7 && Math.abs(vx) > 0.6) {
-          detectedSwipe = dx > 0 ? "right" : "left";
-          lastSwipeTimeRef.current = now;
-          showFeedback(
-            detectedSwipe === "right" ? "↔ Switched to Trader" : "↔ Switched to Investor"
-          );
-        }
-      }
-
-      // Discrete Action State Machine (Debounce & Continuous Hold)
-      const HOLD_THRESHOLD_MS = 220;
-      const ACTION_COOLDOWN_MS = 900;
-
-      let triggeredActionPose: GestureType = detectedPose;
+      const requiredHold = HOLD_THRESHOLDS[detectedPose] ?? 350;
+      const ACTION_COOLDOWN_MS = detectedPose === "open_palm" ? 1200 : 900;
 
       if (
         detectedPose === "bull_thumbs_up" ||
         detectedPose === "bear_thumbs_down" ||
         detectedPose === "v_sign" ||
-        detectedPose === "open_palm"
+        detectedPose === "open_palm" ||
+        detectedPose === "fist"
       ) {
         if (holdGestureRef.current.type !== detectedPose) {
           holdGestureRef.current = { type: detectedPose, startTime: now, triggered: false };
         } else if (
           !holdGestureRef.current.triggered &&
-          now - holdGestureRef.current.startTime >= HOLD_THRESHOLD_MS &&
+          now - holdGestureRef.current.startTime >= requiredHold &&
           now - lastActionTriggerTimeRef.current >= ACTION_COOLDOWN_MS
         ) {
           holdGestureRef.current.triggered = true;
@@ -329,6 +392,8 @@ export function useHandTracking(enabled: boolean = true) {
             showFeedback("🎬 Pitch Studio / IC Debate Toggled");
           } else if (detectedPose === "open_palm") {
             showFeedback("✋ Spatial HUD Toggled");
+          } else if (detectedPose === "fist") {
+            showFeedback("⏸️ Simulation Frozen (Hold Fist)");
           }
         }
       } else {
@@ -398,7 +463,6 @@ export function useHandTracking(enabled: boolean = true) {
       locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
     });
 
-    // Enabled multi-hand tracking (max 2 hands for bimanual manipulation)
     hands.setOptions({
       maxNumHands: 2,
       modelComplexity: 1,

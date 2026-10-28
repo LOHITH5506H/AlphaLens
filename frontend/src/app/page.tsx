@@ -456,22 +456,22 @@ export default function HomePage() {
       });
   }, [speech.transcript, speech.isListening, aiAnalysis, handleSetCompareTicker]);
 
-  // Handle Hand Gestures
-  const tabs: ("Trader" | "Investor")[] = ["Trader", "Investor"];
-  
+    // Handle Hand Gestures (Responsive Tab Switching)
   useEffect(() => {
-    if (gestureState.swipeDirection === "left") {
-      setActiveTab((prev) => {
-        const idx = tabs.indexOf(prev);
-        return tabs[Math.min(idx + 1, tabs.length - 1)];
-      });
-    } else if (gestureState.swipeDirection === "right") {
-      setActiveTab((prev) => {
-        const idx = tabs.indexOf(prev);
-        return tabs[Math.max(idx - 1, 0)];
-      });
-    }
+    if (!gestureState.swipeDirection) return;
+    setActiveTab((prev) => (prev === "Investor" ? "Trader" : "Investor"));
   }, [gestureState.swipeDirection]);
+
+  // Handle Simulation Freeze / Fist Hold
+  const isSimulationFrozen = gestureState.activeGesture === "fist";
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (isSimulationFrozen) {
+      window.speechSynthesis.pause();
+    } else {
+      window.speechSynthesis.resume();
+    }
+  }, [isSimulationFrozen]);
 
   // Handle Discrete Spatial Hand Gestures
   const lastHandledGestureRef = useRef<string>("none");
@@ -728,6 +728,7 @@ export default function HomePage() {
           showLSTMConeInTrader={showLSTMConeInTrader}
           gestureScale={gestureState.twoHandScale}
           gestureRotation={gestureState.twoHandRotation}
+          isFrozen={isSimulationFrozen}
           compareTicker={compareTicker}
           compareStockData={compareStockData}
           onSelectCompareTicker={handleSetCompareTicker}
@@ -1212,7 +1213,17 @@ export default function HomePage() {
             <span>{isHandTrackingEnabled ? "Gestures On" : "Gestures Off"}</span>
           </button>
           
-          <HandCursor 
+          {/* Simulation Frozen Indicator */}
+      {isSimulationFrozen && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+          <div className="bg-amber-950/90 border-2 border-amber-500 rounded-full px-5 py-2 shadow-2xl shadow-amber-500/50 flex items-center gap-2.5 backdrop-blur-xl animate-pulse">
+            <span className="text-base">✊</span>
+            <span className="text-amber-300 font-bold tracking-wider text-xs uppercase">Simulation Frozen / Hold Active</span>
+          </div>
+        </div>
+      )}
+
+      <HandCursor 
             coordsRef={coordsRef} 
             isPinching={gestureState.isPinching} 
             isVisible={gestureState.isVisible} 
